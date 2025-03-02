@@ -43,26 +43,67 @@ BertEmbeddings init_bert_embeddings(BertConfig *config) {
   return embeddings;
 }
 
-// Define the bert_word_embeddings_forward function
-void bert_word_embeddings_forward(BertEmbeddings *embeddings, int *input_ids,
-                                  int batch_size, int seq_length,
-                                  float *output) {
+float* bert_embeddings_forward(BertEmbeddings *embeddings, int *input_ids,
+                             int *token_type_ids, int batch_size,
+                             int seq_length, float *output) {
   int hidden_size = embeddings->config->hidden_size;
 
-  // Directly extract embeddings for each input ID
-  int total_tokens = batch_size * seq_length;
-  for (int i = 0; i < total_tokens; i++) {
-    int word_idx = input_ids[i];
+  // Initialize output with zeros
+  size_t output_size = batch_size * seq_length * hidden_size * sizeof(float);
+  memset(output, 0, output_size);
 
-    // Bounds check
-    if (word_idx < 0 || word_idx >= embeddings->config->vocab_size) {
-      fprintf(stderr, "Error: Invalid word index %d\n", word_idx);
-      exit(EXIT_FAILURE);
+  // Create temporary buffer for embeddings
+  float *temp_embeddings = (float *)malloc(output_size);
+  memset(temp_embeddings, 0, output_size);
+
+  // Process each item in batch
+  for (int b = 0; b < batch_size; b++) {
+    for (int s = 0; s < seq_length; s++) {
+      int idx = b * seq_length + s;
+      int word_idx = input_ids[idx];
+      int type_idx = token_type_ids ? token_type_ids[idx] : 0;
+
+      // Get word embedding
+      for (int h = 0; h < hidden_size; h++) {
+        int emb_idx = b * seq_length * hidden_size + s * hidden_size + h;
+        int word_emb_idx = word_idx * hidden_size + h;
+        temp_embeddings[emb_idx] = embeddings->word_embeddings[word_emb_idx];
+
+        // Add position embedding
+        int pos_emb_idx = s * hidden_size + h;
+        temp_embeddings[emb_idx] +=
+            embeddings->position_embeddings[pos_emb_idx];
+
+        // Add token type embedding
+        int type_emb_idx = type_idx * hidden_size + h;
+        temp_embeddings[emb_idx] +=
+            embeddings->token_type_embeddings[type_emb_idx];
+      }
     }
-
-    // Copy embedding directly to output
-    memcpy(&output[i * hidden_size],
-           &embeddings->word_embeddings[word_idx * hidden_size],
-           hidden_size * sizeof(float));
   }
+  return temp_embeddings;
 }
+
+// // Define the bert_word_embeddings_forward function
+// void bert_word_embeddings_forward(BertEmbeddings *embeddings, int *input_ids,
+//                                   int batch_size, int seq_length,
+//                                   float *output) {
+//   int hidden_size = embeddings->config->hidden_size;
+//
+//   // Directly extract embeddings for each input ID
+//   int total_tokens = batch_size * seq_length;
+//   for (int i = 0; i < total_tokens; i++) {
+//     int word_idx = input_ids[i];
+//
+//     // Bounds check
+//     if (word_idx < 0 || word_idx >= embeddings->config->vocab_size) {
+//       fprintf(stderr, "Error: Invalid word index %d\n", word_idx);
+//       exit(EXIT_FAILURE);
+//     }
+//
+//     // Copy embedding directly to output
+//     memcpy(&output[i * hidden_size],
+//            &embeddings->word_embeddings[word_idx * hidden_size],
+//            hidden_size * sizeof(float));
+//   }
+// }

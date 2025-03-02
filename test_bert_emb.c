@@ -69,30 +69,22 @@ int main() {
   // Perform forward pass
   float *output = (float *)malloc(batch_size * seq_length * config.hidden_size *
                                   sizeof(float));
-  // Clear output to ensure we don't have uninitialized memory
-  memset(output, 0,
-         batch_size * seq_length * config.hidden_size * sizeof(float));
-
-  // Run forward pass
-  bert_word_embeddings_forward(&embeddings, input_ids, batch_size, seq_length,
-                               output);
-
-  // load hf model output
-  float *we_output_hf = (float *)malloc(batch_size * seq_length *
-                                        config.hidden_size * sizeof(float));
-  load_weights("bins/word_embeddings_output.bin", we_output_hf,
-               batch_size * seq_length * config.hidden_size);
-
-  // verify full tensor
-  check_tensor(output, we_output_hf,
-               batch_size * seq_length * config.hidden_size, "we_output");
-
+  int token_id[batch_size * seq_length];
+  load_int_array("bins/token_type_ids.bin", token_id, batch_size * seq_length);
+  output = bert_embeddings_forward(&embeddings, input_ids, token_id, batch_size,
+                          seq_length, output);
+  float *combined_emb = (float *)malloc(batch_size * seq_length * config.hidden_size * sizeof(float));
+  load_weights("bins/combined_embeddings.bin", combined_emb,
+               seq_length * config.hidden_size * batch_size);
+  check_tensor(output, combined_emb, seq_length *
+               batch_size * config.hidden_size, "combined_emb-val");
+  // total embeddings
   // Free allocated memory
   free(embeddings.word_embeddings);
   // Remove this line to fix segfault - position_embeddings was never allocated
   // free(embeddings.position_embeddings);
-  free(output);
-  free(we_output_hf);
+  // free(output);
+  // free(we_output_hf);
   free(hf_we_weight);
 
   return 0;

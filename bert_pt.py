@@ -90,34 +90,32 @@ class BertEmbeddings(nn.Module):
 
         # Word Embeddings
         word_embed = self.word_embeddings(input_ids)
-        breakpoint()
-        import sys; sys.exit()
-        save_tensor_as_bin("bins/word_embeddings_output.bin", word_embed)
+        # save_tensor_as_bin("bins/word_embeddings_output.bin", word_embed)
 
         # Position Embeddings
         position_ids = torch.arange(
             seq_length, dtype=torch.long, device=input_ids.device
         ).unsqueeze(0)
-        save_tensor_as_bin("bins/position_ids.bin", position_ids)
+        # save_tensor_as_bin("bins/position_ids.bin", position_ids)
 
         position_embd = self.position_embeddings(position_ids)
-        save_tensor_as_bin("bins/position_embeddings_output.bin", position_embd)
+        # save_tensor_as_bin("bins/position_embeddings_output.bin", position_embd)
 
         # Token Type Embeddings
         if token_type_ids is None:
             token_type_ids = torch.zeros_like(input_ids, dtype=torch.long)
-        save_tensor_as_bin("bins/token_type_ids.bin", token_type_ids)
+        # save_tensor_as_bin("bins/token_type_ids.bin", token_type_ids)
 
         token_type_embd = self.token_type_embeddings(token_type_ids)
-        save_tensor_as_bin("bins/token_type_embeddings_output.bin", token_type_embd)
+        # save_tensor_as_bin("bins/token_type_embeddings_output.bin", token_type_embd)
 
         # Combine all embeddings
         embeddings = word_embed + position_embd + token_type_embd
-        save_tensor_as_bin("bins/combined_embeddings.bin", embeddings)
+        # save_tensor_as_bin("bins/combined_embeddings.bin", embeddings)
 
         # Apply LayerNorm and Dropout
         embeddings = self.LayerNorm(embeddings)
-        save_tensor_as_bin("bins/layernorm_output.bin", embeddings)
+        # save_tensor_as_bin("bins/layernorm_output.bin", embeddings)
 
         # Set eval mode to remove randomness in dropout
         if not self.training:
@@ -463,7 +461,6 @@ if __name__ == "__main__":
     # Generate inputs
     input_ids, attention_mask, token_type_ids = generate_random_input()
     print(input_ids)
-    breakpoint()
 
     # Save inputs
     save_tensor_as_bin("bins/input_ids.bin", input_ids)
