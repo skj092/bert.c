@@ -90,6 +90,8 @@ class BertEmbeddings(nn.Module):
 
         # Word Embeddings
         word_embed = self.word_embeddings(input_ids)
+        breakpoint()
+        import sys; sys.exit()
         save_tensor_as_bin("bins/word_embeddings_output.bin", word_embed)
 
         # Position Embeddings
@@ -412,8 +414,8 @@ class BertModelCustom(nn.Module):
         hf_sd = bert_base.state_dict()
 
         # Save model weights for C implementation
-        for k, v in hf_sd.items():
-            save_tensor_as_bin(f"bins/weights/{k.replace('.', '_')}.bin", v)
+        # for k, v in hf_sd.items():
+        #     save_tensor_as_bin(f"bins/weights/{k.replace('.', '_')}.bin", v)
 
         # Copy weights to our model
         for k in hf_sd.keys():
@@ -460,11 +462,13 @@ if __name__ == "__main__":
 
     # Generate inputs
     input_ids, attention_mask, token_type_ids = generate_random_input()
+    print(input_ids)
+    breakpoint()
 
     # Save inputs
     save_tensor_as_bin("bins/input_ids.bin", input_ids)
-    save_tensor_as_bin("bins/attention_mask.bin", attention_mask)
-    save_tensor_as_bin("bins/token_type_ids.bin", token_type_ids)
+    # save_tensor_as_bin("bins/attention_mask.bin", attention_mask)
+    # save_tensor_as_bin("bins/token_type_ids.bin", token_type_ids)
 
     # Load base BERT model
     bert_base = BertModel.from_pretrained("bert-base-uncased")
@@ -475,12 +479,13 @@ if __name__ == "__main__":
     model.load_from_pretrained(bert_base)
     model.eval()  # Set to evaluation mode to disable dropout
 
+
     # Generate outputs from both models for comparison
     with torch.no_grad():
         # Original model output
         out1 = bert_base(input_ids)
-        save_tensor_as_bin("bins/original_last_hidden_state.bin", out1.last_hidden_state)
-        save_tensor_as_bin("bins/original_pooler_output.bin", out1.pooler_output)
+        # save_tensor_as_bin("bins/original_last_hidden_state.bin", out1.last_hidden_state)
+        # save_tensor_as_bin("bins/original_pooler_output.bin", out1.pooler_output)
 
         # Custom model output
         sequence_output, pooled_output = model(input_ids)
