@@ -43,9 +43,9 @@ BertEmbeddings init_bert_embeddings(BertConfig *config) {
   return embeddings;
 }
 
-float* bert_embeddings_forward(BertEmbeddings *embeddings, int *input_ids,
-                             int *token_type_ids, int batch_size,
-                             int seq_length, float *output) {
+float *bert_embeddings_forward(BertEmbeddings *embeddings, int *input_ids,
+                               int *token_type_ids, int batch_size,
+                               int seq_length, float *output) {
   int hidden_size = embeddings->config->hidden_size;
 
   // Initialize output with zeros

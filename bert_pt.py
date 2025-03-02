@@ -114,6 +114,7 @@ class BertEmbeddings(nn.Module):
         # save_tensor_as_bin("bins/combined_embeddings.bin", embeddings)
 
         # Apply LayerNorm and Dropout
+        breakpoint()
         embeddings = self.LayerNorm(embeddings)
         # save_tensor_as_bin("bins/layernorm_output.bin", embeddings)
 
