@@ -15,3 +15,7 @@ By Following [llm.c](https://github.com/karpathy/llm.c), I am gonna try to imple
 - [x] Save Input and Output of every layer of python model, to verify the result in c.
 - [x] Implement BERT Embedding in C, verify the result with python output.
 - [ ] Implement Layer Normalizaging in Python and C.
+
+
+
+

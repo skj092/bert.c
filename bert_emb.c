@@ -81,6 +81,7 @@ float *bert_embeddings_forward(BertEmbeddings *embeddings, int *input_ids,
       }
     }
   }
+  // (bs, sl, 768)
   return temp_embeddings;
 }
 

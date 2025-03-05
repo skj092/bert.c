@@ -461,10 +461,9 @@ if __name__ == "__main__":
 
     # Generate inputs
     input_ids, attention_mask, token_type_ids = generate_random_input()
-    print(input_ids)
 
     # Save inputs
-    save_tensor_as_bin("bins/input_ids.bin", input_ids)
+    # save_tensor_as_bin("bins/input_ids.bin", input_ids)
     # save_tensor_as_bin("bins/attention_mask.bin", attention_mask)
     # save_tensor_as_bin("bins/token_type_ids.bin", token_type_ids)
 

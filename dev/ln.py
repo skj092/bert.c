@@ -1,55 +1,62 @@
 import torch
-import numpy as np
-from torch import nn
+
+eps = 1e-5
 
 
-def set_seed(seed):
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    np.random.seed(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
+class LayerNorm:
+
+    @staticmethod
+    def forward(x, w, b):
+        B, T, C = x.size()
+        mean = x.sum(-1, keepdim=True) / C  # B,T,1
+        xshift = x - mean  # B,T,C
+        var = (xshift**2).sum(-1, keepdim=True) / C  # B,T,1
+        rstd = (var + eps) ** -0.5  # B,T,1
+        norm = xshift * rstd  # B,T,C
+        out = norm * w + b  # B,T,C
+
+        cache = (x, w, mean, rstd)
+        return out, cache
 
 
-set_seed(42)
+# create a small dummy example and check w.r.t PyTorch backward
+B = 2
+T = 3
+C = 4
+x = torch.randn(B, T, C, requires_grad=True)
+w = torch.randn(C, requires_grad=True)
+b = torch.randn(C, requires_grad=True)
+out, cache = LayerNorm.forward(x, w, b)
+
+# PyTorch LayerNorm
+ln = torch.nn.LayerNorm(C, elementwise_affine=True)
+ln.weight.data = w.clone()
+ln.bias.data = b.clone()
+out_torch = ln(x)
+
+# Check forward pass
+print("Forward pass error custom vs pytorch:", (out - out_torch).abs().max().item())
 
 
-def check_layer_normalization(tensor, atol=1e-4):
-    """
-    Checks whether a tensor is layer normalized.
+dout = torch.randn(B, T, C)
 
-    Args:
-        tensor (torch.Tensor): The input tensor (assumed shape: [batch, seq_len, embedding_dim]).
-        atol (float): Absolute tolerance for floating-point comparisons.
+# compare to PyTorch autograd
+fakeloss = (out * dout).sum()
+fakeloss.backward()
 
-    Returns:
-        bool: True if the tensor is approximately layer normalized, False otherwise.
-    """
-    # Compute mean and variance along the last dimension (embedding_dim)
-    means = tensor.mean(dim=-1)  # Shape: [batch, seq_len]
-    variances = tensor.var(dim=-1, unbiased=False)  # PyTorch variance defaults to an unbiased estimate
-
-    print("Mean per row:\n", means)
-    print("Variance per row:\n", variances)
-
-    mean_check = torch.allclose(means, torch.zeros_like(means), atol=atol)
-    variance_check = torch.allclose(variances, torch.ones_like(variances), atol=atol)
-
-    print("Mean check:", mean_check)
-    print("Variance check:", variance_check)
-
-    return mean_check and variance_check
+# for reference checking in C also
+x, w, mean, rstd = cache
 
 
-batch, sentence_length, embedding_dim = 2, 4, 8
-embedding = torch.randn(batch, sentence_length, embedding_dim)
-layer_norm = nn.LayerNorm(embedding_dim, eps=1e-5)  # Default PyTorch LayerNorm uses small eps
+def write(tensor, handle):
+    handle.write(tensor.detach().numpy().astype("float32").tobytes())
 
-# Activate module
-out = layer_norm(embedding)
 
-# Debug output
-print("LayerNorm Output:\n", out)
-
-# Check LayerNorm
-print("Is Layer Normalized?", check_layer_normalization(out))
+# Write to file
+with open('ln.bin', 'wb') as file:
+    write(x, file)  # (B, T, C)
+    write(w, file)  # (C, )
+    write(b, file)  # (C, )
+    write(out, file)  # (B, T, C)
+    write(mean, file)  # (B, T)
+    write(rstd, file)  # (B, T)

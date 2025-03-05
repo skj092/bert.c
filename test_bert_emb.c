@@ -56,6 +56,7 @@ int main() {
   int seq_length = 128;
   int input_ids[batch_size * seq_length];
   load_int_array("bins/input_ids.bin", input_ids, batch_size * seq_length);
+  print_int_array(input_ids, 10);
 
   // nitialize token id
   int token_id[batch_size * seq_length];
@@ -64,30 +65,38 @@ int main() {
   // Perform forward pass
   float *output = (float *)malloc(batch_size * seq_length * config.hidden_size *
                                   sizeof(float));
-  bert_embeddings_forward(&embeddings, input_ids, token_id, batch_size,
-                          seq_length, output);
-  float *combined_emb = (float *)malloc(batch_size * seq_length * config.hidden_size * sizeof(float));
-  load_weights("bins/layernorm_output.bin", combined_emb,
+  float *combined_emb = (float *)malloc(batch_size * seq_length *
+                                        config.hidden_size * sizeof(float));
+  load_weights("bins/combined_embeddings.bin", combined_emb,
                seq_length * config.hidden_size * batch_size);
-  check_tensor(output, combined_emb, seq_length *
-               batch_size * config.hidden_size, "combined_emb-val");
+
+  output = bert_embeddings_forward(&embeddings, input_ids, token_id, batch_size,
+                                   seq_length, output);
+  check_tensor(output, combined_emb,
+               seq_length * batch_size * config.hidden_size,
+               "combined_emb-val");
 
   // layer norm
-  float *ln_output = (float *)malloc(batch_size * seq_length * config.hidden_size * sizeof(float));
-  float *gamma = (float *)malloc(config.hidden_size * sizeof(float));
-  float *beta = (float *)malloc(config.hidden_size * sizeof(float));
-  load_weights("./bins/weights/embeddings_LayerNorm_weight.bin", gamma, config.hidden_size);
-  load_weights("./bins/weights/embeddings_LayerNorm_bias.bin", beta, config.hidden_size);
-  layernorm_forward_cpu(ln_output, combined_emb, gamma, beta, batch_size, seq_length, config.hidden_size);
-  float *expected_ln_output = (float *)malloc(batch_size * seq_length * config.hidden_size * sizeof(float));
-  load_weights("bins/layernorm_output.bin", expected_ln_output, batch_size * seq_length * config.hidden_size);
-  check_tensor(ln_output, expected_ln_output, batch_size * seq_length * config.hidden_size, "layernorm_output");
+  // float *ln_output = (float *)malloc(batch_size * seq_length *
+  // config.hidden_size * sizeof(float)); float *gamma = (float
+  // *)malloc(config.hidden_size * sizeof(float)); float *beta = (float
+  // *)malloc(config.hidden_size * sizeof(float));
+  // load_weights("./bins/weights/embeddings_LayerNorm_weight.bin", gamma,
+  // config.hidden_size);
+  // load_weights("./bins/weights/embeddings_LayerNorm_bias.bin", beta,
+  // config.hidden_size); layernorm_forward_cpu(ln_output, combined_emb, gamma,
+  // beta, batch_size, seq_length, config.hidden_size); float
+  // *expected_ln_output = (float *)malloc(batch_size * seq_length *
+  // config.hidden_size * sizeof(float));
+  // load_weights("bins/layernorm_output.bin", expected_ln_output, batch_size *
+  // seq_length * config.hidden_size); check_tensor(ln_output,
+  // expected_ln_output, batch_size * seq_length * config.hidden_size,
+  // "layernorm_output");
 
-
-  free(ln_output);
-  free(expected_ln_output);
-  free(gamma);
-  free(beta);
+  // free(ln_output);
+  // free(expected_ln_output);
+  // free(gamma);
+  // free(beta);
 
   return 0;
 }
