@@ -8,6 +8,7 @@ import torch.nn as nn
 import math
 import os
 
+
 def set_seed(seed):
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
@@ -15,10 +16,12 @@ def set_seed(seed):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
+
 set_seed(42)
 
 # Ensure output directory exists
 os.makedirs("bins", exist_ok=True)
+
 
 @dataclass
 class BertConfig:
@@ -35,6 +38,10 @@ class BertConfig:
     layer_norm_eps: float = 1e-12
     pad_token_id: int = 0
     type_vocab_size: int = 2
+
+
+def write(tensor, handle):
+    handle.write(tensor.detach().numpy().astype("float32").tobytes())
 
 
 def save_tensor_as_bin(filename, tensor):
@@ -90,34 +97,44 @@ class BertEmbeddings(nn.Module):
 
         # Word Embeddings
         word_embed = self.word_embeddings(input_ids)
-        # save_tensor_as_bin("bins/word_embeddings_output.bin", word_embed)
+        save_tensor_as_bin("bins/word_embeddings_output.bin", word_embed)
 
         # Position Embeddings
         position_ids = torch.arange(
             seq_length, dtype=torch.long, device=input_ids.device
         ).unsqueeze(0)
-        # save_tensor_as_bin("bins/position_ids.bin", position_ids)
+        save_tensor_as_bin("bins/position_ids.bin", position_ids)
 
         position_embd = self.position_embeddings(position_ids)
-        # save_tensor_as_bin("bins/position_embeddings_output.bin", position_embd)
+        save_tensor_as_bin(
+            "bins/position_embeddings_output.bin", position_embd)
 
         # Token Type Embeddings
         if token_type_ids is None:
             token_type_ids = torch.zeros_like(input_ids, dtype=torch.long)
-        # save_tensor_as_bin("bins/token_type_ids.bin", token_type_ids)
+        save_tensor_as_bin("bins/token_type_ids.bin", token_type_ids)
 
         token_type_embd = self.token_type_embeddings(token_type_ids)
-        # save_tensor_as_bin("bins/token_type_embeddings_output.bin", token_type_embd)
+        save_tensor_as_bin(
+            "bins/token_type_embeddings_output.bin", token_type_embd)
 
         # Combine all embeddings
         embeddings = word_embed + position_embd + token_type_embd
-        # save_tensor_as_bin("bins/combined_embeddings.bin", embeddings)
+        save_tensor_as_bin("bins/combined_embeddings.bin", embeddings)
 
         # Apply LayerNorm and Dropout
         breakpoint()
+        with open('bins/ln_i.bin', 'wb') as file:
+            write(embeddings, file)
         embeddings = self.LayerNorm(embeddings)
-        # save_tensor_as_bin("bins/layernorm_output.bin", embeddings)
+        with open('bins/ln_w.bin', 'wb') as file:
+            write(self.LayerNorm.weight, file)
+        with open('bins/ln_b.bin', 'wb') as file:
+            write(self.LayerNorm.bias, file)
 
+        with open('bins/ln_o.bin', 'wb') as file:
+            write(embeddings, file)
+        breakpoint()
         # Set eval mode to remove randomness in dropout
         if not self.training:
             embeddings = self.dropout(embeddings)
@@ -154,31 +171,37 @@ class BertSelfAttention(nn.Module):
         attn_bias = torch.zeros(L, S, dtype=query.dtype, device=query.device)
 
         # Save intermediate values
-        save_tensor_as_bin(f"bins/layer{self.layer_idx}_attn_scale_factor.bin", torch.tensor([scale_factor]))
+        save_tensor_as_bin(
+            f"bins/layer{self.layer_idx}_attn_scale_factor.bin", torch.tensor([scale_factor]))
 
         # Matrix multiplication of query and key
         attn_weight = query @ key.transpose(-2, -1)
-        save_tensor_as_bin(f"bins/layer{self.layer_idx}_attn_qk_product.bin", attn_weight)
+        save_tensor_as_bin(
+            f"bins/layer{self.layer_idx}_attn_qk_product.bin", attn_weight)
 
         # Apply scaling
         attn_weight = attn_weight * scale_factor
-        save_tensor_as_bin(f"bins/layer{self.layer_idx}_attn_scaled.bin", attn_weight)
+        save_tensor_as_bin(
+            f"bins/layer{self.layer_idx}_attn_scaled.bin", attn_weight)
 
         # Add bias (zeros in this case)
         attn_weight += attn_bias
 
         # Apply softmax
         attn_weight = torch.softmax(attn_weight, dim=-1)
-        save_tensor_as_bin(f"bins/layer{self.layer_idx}_attn_softmax.bin", attn_weight)
+        save_tensor_as_bin(
+            f"bins/layer{self.layer_idx}_attn_softmax.bin", attn_weight)
 
         # Apply dropout (in eval mode, this is identity)
         if not self.training:
             attn_weight = torch.dropout(attn_weight, dropout_p, train=False)
-            save_tensor_as_bin(f"bins/layer{self.layer_idx}_attn_dropout.bin", attn_weight)
+            save_tensor_as_bin(
+                f"bins/layer{self.layer_idx}_attn_dropout.bin", attn_weight)
 
         # Matrix multiplication with value
         output = attn_weight @ value
-        save_tensor_as_bin(f"bins/layer{self.layer_idx}_attn_output.bin", output)
+        save_tensor_as_bin(
+            f"bins/layer{self.layer_idx}_attn_output.bin", output)
 
         return output
 
@@ -199,21 +222,26 @@ class BertSelfAttention(nn.Module):
         save_tensor_as_bin(f"bins/layer{self.layer_idx}_v_proj.bin", v_proj)
 
         # Reshape for multi-head attention
-        q = q_proj.view(batch_size, seq_length, self.num_heads, self.head_dim).transpose(1, 2)
+        q = q_proj.view(batch_size, seq_length, self.num_heads,
+                        self.head_dim).transpose(1, 2)
         save_tensor_as_bin(f"bins/layer{self.layer_idx}_q_reshaped.bin", q)
 
-        k = k_proj.view(batch_size, seq_length, self.num_heads, self.head_dim).transpose(1, 2)
+        k = k_proj.view(batch_size, seq_length, self.num_heads,
+                        self.head_dim).transpose(1, 2)
         save_tensor_as_bin(f"bins/layer{self.layer_idx}_k_reshaped.bin", k)
 
-        v = v_proj.view(batch_size, seq_length, self.num_heads, self.head_dim).transpose(1, 2)
+        v = v_proj.view(batch_size, seq_length, self.num_heads,
+                        self.head_dim).transpose(1, 2)
         save_tensor_as_bin(f"bins/layer{self.layer_idx}_v_reshaped.bin", v)
 
         # Compute attention scores
         attn_scores = self.scaled_dot_product_attention(q, k, v)
-        save_tensor_as_bin(f"bins/layer{self.layer_idx}_attn_scores.bin", attn_scores)
+        save_tensor_as_bin(
+            f"bins/layer{self.layer_idx}_attn_scores.bin", attn_scores)
 
         # Apply attention to values and reshape back
-        context = attn_scores.transpose(1, 2).contiguous().view(batch_size, seq_length, hidden_size)
+        context = attn_scores.transpose(1, 2).contiguous().view(
+            batch_size, seq_length, hidden_size)
         save_tensor_as_bin(f"bins/layer{self.layer_idx}_context.bin", context)
 
         return (context,)
@@ -228,15 +256,18 @@ class BertIntermediate(nn.Module):
 
     def forward(self, xb):
         # Save input
-        save_tensor_as_bin(f"bins/layer{self.layer_idx}_intermediate_input.bin", xb)
+        save_tensor_as_bin(
+            f"bins/layer{self.layer_idx}_intermediate_input.bin", xb)
 
         # Linear projection
         xb = self.dense(xb)
-        save_tensor_as_bin(f"bins/layer{self.layer_idx}_intermediate_dense.bin", xb)
+        save_tensor_as_bin(
+            f"bins/layer{self.layer_idx}_intermediate_dense.bin", xb)
 
         # Activation
         out = self.intermediate_act_fn(xb)
-        save_tensor_as_bin(f"bins/layer{self.layer_idx}_intermediate_activation.bin", out)
+        save_tensor_as_bin(
+            f"bins/layer{self.layer_idx}_intermediate_activation.bin", out)
 
         return out
 
@@ -246,30 +277,37 @@ class BertOutput(nn.Module):
         super().__init__()
         self.layer_idx = layer_idx
         self.dense = nn.Linear(config.intermediate_size, config.hidden_size)
-        self.LayerNorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
+        self.LayerNorm = nn.LayerNorm(
+            config.hidden_size, eps=config.layer_norm_eps)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
 
     def forward(self, hidden_states: torch.Tensor, input_tensor: torch.Tensor) -> torch.Tensor:
         # Save inputs
-        save_tensor_as_bin(f"bins/layer{self.layer_idx}_output_hidden_states.bin", hidden_states)
-        save_tensor_as_bin(f"bins/layer{self.layer_idx}_output_input_tensor.bin", input_tensor)
+        save_tensor_as_bin(
+            f"bins/layer{self.layer_idx}_output_hidden_states.bin", hidden_states)
+        save_tensor_as_bin(
+            f"bins/layer{self.layer_idx}_output_input_tensor.bin", input_tensor)
 
         # Linear projection
         hidden_states = self.dense(hidden_states)
-        save_tensor_as_bin(f"bins/layer{self.layer_idx}_output_dense.bin", hidden_states)
+        save_tensor_as_bin(
+            f"bins/layer{self.layer_idx}_output_dense.bin", hidden_states)
 
         # Dropout (in eval mode, this is identity)
         if not self.training:
             hidden_states = self.dropout(hidden_states)
-            save_tensor_as_bin(f"bins/layer{self.layer_idx}_output_dropout.bin", hidden_states)
+            save_tensor_as_bin(
+                f"bins/layer{self.layer_idx}_output_dropout.bin", hidden_states)
 
         # Residual connection
         residual = hidden_states + input_tensor
-        save_tensor_as_bin(f"bins/layer{self.layer_idx}_output_residual.bin", residual)
+        save_tensor_as_bin(
+            f"bins/layer{self.layer_idx}_output_residual.bin", residual)
 
         # Layer normalization
         normalized = self.LayerNorm(residual)
-        save_tensor_as_bin(f"bins/layer{self.layer_idx}_output_layernorm.bin", normalized)
+        save_tensor_as_bin(
+            f"bins/layer{self.layer_idx}_output_layernorm.bin", normalized)
 
         return normalized
 
@@ -279,30 +317,37 @@ class BertSelfOutput(nn.Module):
         super().__init__()
         self.layer_idx = layer_idx
         self.dense = nn.Linear(config.hidden_size, config.hidden_size)
-        self.LayerNorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
+        self.LayerNorm = nn.LayerNorm(
+            config.hidden_size, eps=config.layer_norm_eps)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
 
     def forward(self, hidden_states: torch.Tensor, input_tensor: torch.Tensor) -> torch.Tensor:
         # Save inputs
-        save_tensor_as_bin(f"bins/layer{self.layer_idx}_self_output_hidden_states.bin", hidden_states)
-        save_tensor_as_bin(f"bins/layer{self.layer_idx}_self_output_input_tensor.bin", input_tensor)
+        save_tensor_as_bin(
+            f"bins/layer{self.layer_idx}_self_output_hidden_states.bin", hidden_states)
+        save_tensor_as_bin(
+            f"bins/layer{self.layer_idx}_self_output_input_tensor.bin", input_tensor)
 
         # Linear projection
         hidden_states = self.dense(hidden_states)
-        save_tensor_as_bin(f"bins/layer{self.layer_idx}_self_output_dense.bin", hidden_states)
+        save_tensor_as_bin(
+            f"bins/layer{self.layer_idx}_self_output_dense.bin", hidden_states)
 
         # Dropout (in eval mode, this is identity)
         if not self.training:
             hidden_states = self.dropout(hidden_states)
-            save_tensor_as_bin(f"bins/layer{self.layer_idx}_self_output_dropout.bin", hidden_states)
+            save_tensor_as_bin(
+                f"bins/layer{self.layer_idx}_self_output_dropout.bin", hidden_states)
 
         # Residual connection
         residual = hidden_states + input_tensor
-        save_tensor_as_bin(f"bins/layer{self.layer_idx}_self_output_residual.bin", residual)
+        save_tensor_as_bin(
+            f"bins/layer{self.layer_idx}_self_output_residual.bin", residual)
 
         # Layer normalization
         normalized = self.LayerNorm(residual)
-        save_tensor_as_bin(f"bins/layer{self.layer_idx}_self_output_layernorm.bin", normalized)
+        save_tensor_as_bin(
+            f"bins/layer{self.layer_idx}_self_output_layernorm.bin", normalized)
 
         return normalized
 
@@ -311,19 +356,22 @@ class BertAttention(nn.Module):
     def __init__(self, config, hidden_size=768, num_heads=12, dropout=0.1, layer_idx=0):
         super().__init__()
         self.layer_idx = layer_idx
-        self.self = BertSelfAttention(config, hidden_size, num_heads, dropout, layer_idx)
+        self.self = BertSelfAttention(
+            config, hidden_size, num_heads, dropout, layer_idx)
         self.output = BertSelfOutput(config, layer_idx)
 
     def forward(self, x):
         # Save input
-        save_tensor_as_bin(f"bins/layer{self.layer_idx}_attention_input.bin", x)
+        save_tensor_as_bin(
+            f"bins/layer{self.layer_idx}_attention_input.bin", x)
 
         # Self-attention
         self_outputs = self.self(x)
 
         # Self-output processing
         attention_output = self.output(self_outputs[0], x)
-        save_tensor_as_bin(f"bins/layer{self.layer_idx}_attention_output.bin", attention_output)
+        save_tensor_as_bin(
+            f"bins/layer{self.layer_idx}_attention_output.bin", attention_output)
 
         outputs = (attention_output,) + self_outputs[1:]
         return outputs
@@ -334,13 +382,14 @@ class BertLayer(nn.Module):
         super().__init__()
         self.layer_idx = layer_idx
         self.attention = BertAttention(config, config.hidden_size, config.num_attention_heads,
-                                      config.attention_probs_dropout_prob, layer_idx)
+                                       config.attention_probs_dropout_prob, layer_idx)
         self.intermediate = BertIntermediate(config, layer_idx)
         self.output = BertOutput(config, layer_idx)
 
     def forward(self, hidden_state):
         # Save input to this layer
-        save_tensor_as_bin(f"bins/layer{self.layer_idx}_input.bin", hidden_state)
+        save_tensor_as_bin(
+            f"bins/layer{self.layer_idx}_input.bin", hidden_state)
 
         # Attention block
         attn_out = self.attention(hidden_state)
@@ -351,7 +400,8 @@ class BertLayer(nn.Module):
         layer_output = self.output(intermediate, attn_out[0])
 
         # Save final layer output
-        save_tensor_as_bin(f"bins/layer{self.layer_idx}_output.bin", layer_output)
+        save_tensor_as_bin(
+            f"bins/layer{self.layer_idx}_output.bin", layer_output)
 
         outputs = (layer_output,) + extra_outputs
         return outputs
@@ -360,7 +410,8 @@ class BertLayer(nn.Module):
 class BertEncoder(nn.Module):
     def __init__(self, config):
         super().__init__()
-        self.layer = nn.ModuleList([BertLayer(config, i) for i in range(config.num_hidden_layers)])
+        self.layer = nn.ModuleList([BertLayer(config, i)
+                                   for i in range(config.num_hidden_layers)])
 
     def forward(self, hidden_state):
         # Save initial input to encoder
@@ -413,8 +464,8 @@ class BertModelCustom(nn.Module):
         hf_sd = bert_base.state_dict()
 
         # Save model weights for C implementation
-        # for k, v in hf_sd.items():
-        #     save_tensor_as_bin(f"bins/weights/{k.replace('.', '_')}.bin", v)
+        for k, v in hf_sd.items():
+            save_tensor_as_bin(f"bins/weights/{k.replace('.', '_')}.bin", v)
 
         # Copy weights to our model
         for k in hf_sd.keys():
@@ -463,9 +514,9 @@ if __name__ == "__main__":
     input_ids, attention_mask, token_type_ids = generate_random_input()
 
     # Save inputs
-    # save_tensor_as_bin("bins/input_ids.bin", input_ids)
-    # save_tensor_as_bin("bins/attention_mask.bin", attention_mask)
-    # save_tensor_as_bin("bins/token_type_ids.bin", token_type_ids)
+    save_tensor_as_bin("bins/input_ids.bin", input_ids)
+    save_tensor_as_bin("bins/attention_mask.bin", attention_mask)
+    save_tensor_as_bin("bins/token_type_ids.bin", token_type_ids)
 
     # Load base BERT model
     bert_base = BertModel.from_pretrained("bert-base-uncased")
@@ -476,13 +527,14 @@ if __name__ == "__main__":
     model.load_from_pretrained(bert_base)
     model.eval()  # Set to evaluation mode to disable dropout
 
-
     # Generate outputs from both models for comparison
     with torch.no_grad():
         # Original model output
         out1 = bert_base(input_ids)
-        # save_tensor_as_bin("bins/original_last_hidden_state.bin", out1.last_hidden_state)
-        # save_tensor_as_bin("bins/original_pooler_output.bin", out1.pooler_output)
+        save_tensor_as_bin(
+            "bins/original_last_hidden_state.bin", out1.last_hidden_state)
+        save_tensor_as_bin(
+            "bins/original_pooler_output.bin", out1.pooler_output)
 
         # Custom model output
         sequence_output, pooled_output = model(input_ids)

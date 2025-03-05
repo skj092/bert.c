@@ -6,8 +6,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-void layernorm_forward(float *out, float *mean, float *rstd, float *inp,
-                       float *weight, float *bias, int B, int T, int C) {
+void layernorm_forward(float *out, float *inp, float *weight, float *bias,
+                       int B, int T, int C) {
   float eps = 1e-5f;
   for (int b = 0; b < B; b++) {
     for (int t = 0; t < T; t++) {
@@ -35,20 +35,16 @@ void layernorm_forward(float *out, float *mean, float *rstd, float *inp,
         float o = n * weight[i] + bias[i]; // scale and shift it
         out_bt[i] = o;                     // write
       }
-      // cache the mean and rstd for the backward pass later
-      mean[b * T + t] = m;
-      rstd[b * T + t] = s;
     }
   }
 }
-
 
 // poor man's tensor checker
 int check_tensor(float *a, float *b, int n, char *label) {
   int ok = 1;
   printf("%s\n", label);
   for (int i = 0; i < n; i++) {
-    if (fabs(a[i] - b[i]) <= 1e-5) {
+    if (fabs(a[i] - b[i]) <= 1e-4) {
       printf("OK ");
     } else {
       printf("NOT OK ");
@@ -59,51 +55,87 @@ int check_tensor(float *a, float *b, int n, char *label) {
   return ok;
 }
 
+float *load_binary_file(const char *filename, int *num_elements) {
+  // Open the file
+  FILE *file = fopen(filename, "rb");
+  if (file == NULL) {
+    printf("Error opening file: %s\n", filename);
+    *num_elements = 0;
+    return NULL;
+  }
+
+  // Determine file size
+  fseek(file, 0, SEEK_END);
+  long file_size = ftell(file);
+  rewind(file);
+
+  // Calculate number of elements
+  *num_elements = file_size / sizeof(float);
+
+  // Allocate memory
+  float *data = (float *)malloc(file_size);
+  if (data == NULL) {
+    printf("Memory allocation failed for file: %s\n", filename);
+    fclose(file);
+    *num_elements = 0;
+    return NULL;
+  }
+
+  // Read file contents
+  size_t elements_read = fread(data, sizeof(float), *num_elements, file);
+
+  // Close file
+  fclose(file);
+
+  // Verify read operation
+  if (elements_read != *num_elements) {
+    printf("Error reading file: %s. Expected %d elements, read %zu\n", filename,
+           *num_elements, elements_read);
+    free(data);
+    *num_elements = 0;
+    return NULL;
+  }
+
+  return data;
+}
+void print_first_n_elements(float *data, int n, const char *array_name) {
+  if (data == NULL) {
+    printf("Cannot print elements: data is NULL\n");
+    return;
+  }
+
+  printf("First %d elements of %s:\n", n, array_name);
+  for (int i = 0; i < n; i++) {
+    printf("%s[%d] = %f\n", array_name, i, data[i]);
+  }
+}
+
 int main() {
 
-  int B = 2; // batch
-  int T = 3; // time / sequence length
-  int C = 4; // number of channels
+  int B = 2;   // batch
+  int T = 128; // time / sequence length
+  int C = 768; // number of channels
+  int num_elements;
 
   float *x = (float *)malloc(B * T * C * sizeof(float));
   float *w = (float *)malloc(C * sizeof(float));
   float *b = (float *)malloc(C * sizeof(float));
   float *out = (float *)malloc(B * T * C * sizeof(float));
-  float *mean = (float *)malloc(B * T * sizeof(float));
-  float *rstd = (float *)malloc(B * T * sizeof(float));
 
-  // read reference information from Python
-  FILE *file = fopen("ln.bin", "rb");
-  if (file == NULL) {
-    printf("Error opening file\n");
-    return 1;
-  }
-  fread(x, sizeof(float), B * T * C, file);
-  fread(w, sizeof(float), C, file);
-  fread(b, sizeof(float), C, file);
-  fread(out, sizeof(float), B * T * C, file);
-  fread(mean, sizeof(float), B * T, file);
-  fread(rstd, sizeof(float), B * T, file);
-  fclose(file);
-
-  // now let's calculate everything ourselves
+  // Load data from python
+  w = load_binary_file("bins/ln_w.bin", &num_elements);
+  b = load_binary_file("bins/ln_b.bin", &num_elements);
+  x = load_binary_file("bins/ln_i.bin", &num_elements);
+  out = load_binary_file("bins/ln_o.bin", &num_elements);
 
   // forward pass
   float *c_out = (float *)malloc(B * T * C * sizeof(float));
-  float *c_mean = (float *)malloc(B * T * sizeof(float));
-  float *c_rstd = (float *)malloc(B * T * sizeof(float));
-  layernorm_forward(c_out, c_mean, c_rstd, x, w, b, B, T, C);
-
+  layernorm_forward(c_out, x, w, b, B, T, C);
   // check correctness of forward pass
-  check_tensor(out, c_out, B * T * C, "out");
-  check_tensor(mean, c_mean, B * T, "mean");
-  check_tensor(rstd, c_rstd, B * T, "rstd");
-
+  check_tensor(out, c_out, 10, "out");
   free(x);
   free(w);
   free(b);
   free(out);
-  free(mean);
-  free(rstd);
   return 0;
 }

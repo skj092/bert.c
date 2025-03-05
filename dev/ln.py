@@ -1,4 +1,7 @@
 import torch
+import numpy as np
+from pathlib import Path
+path = Path('/home/sonu/code/bert.c')
 
 eps = 1e-5
 
@@ -7,7 +10,7 @@ class LayerNorm:
 
     @staticmethod
     def forward(x, w, b):
-        B, T, C = x.size()
+        B, T, C = x.shape
         mean = x.sum(-1, keepdim=True) / C  # B,T,1
         xshift = x - mean  # B,T,C
         var = (xshift**2).sum(-1, keepdim=True) / C  # B,T,1
@@ -19,13 +22,20 @@ class LayerNorm:
         return out, cache
 
 
-# create a small dummy example and check w.r.t PyTorch backward
+# create a small dummy example and check w.r.t PyTorch forward
 B = 2
-T = 3
-C = 4
-x = torch.randn(B, T, C, requires_grad=True)
-w = torch.randn(C, requires_grad=True)
-b = torch.randn(C, requires_grad=True)
+T = 128
+C = 768
+x_path = path/'bins/combined_embeddings.bin'
+b_path = path/'bins/ln_b.bin'
+w_path = path/'bins/ln_w.bin'
+assert x_path.exists()
+assert b_path.exists()
+assert w_path.exists()
+b = torch.from_numpy(np.fromfile(b_path, dtype=np.float32))
+w = torch.from_numpy(np.fromfile(w_path, dtype=np.float32))
+x = torch.from_numpy(np.fromfile(x_path, dtype=np.float32)).view(B, T, C)
+
 out, cache = LayerNorm.forward(x, w, b)
 
 # PyTorch LayerNorm
@@ -34,29 +44,4 @@ ln.weight.data = w.clone()
 ln.bias.data = b.clone()
 out_torch = ln(x)
 
-# Check forward pass
-print("Forward pass error custom vs pytorch:", (out - out_torch).abs().max().item())
-
-
-dout = torch.randn(B, T, C)
-
-# compare to PyTorch autograd
-fakeloss = (out * dout).sum()
-fakeloss.backward()
-
-# for reference checking in C also
-x, w, mean, rstd = cache
-
-
-def write(tensor, handle):
-    handle.write(tensor.detach().numpy().astype("float32").tobytes())
-
-
-# Write to file
-with open('ln.bin', 'wb') as file:
-    write(x, file)  # (B, T, C)
-    write(w, file)  # (C, )
-    write(b, file)  # (C, )
-    write(out, file)  # (B, T, C)
-    write(mean, file)  # (B, T)
-    write(rstd, file)  # (B, T)
+assert torch.allclose(out, out_torch, atol=1e-5)
