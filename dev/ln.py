@@ -3,7 +3,7 @@ import numpy as np
 from pathlib import Path
 path = Path('/home/sonu/code/bert.c')
 
-eps = 1e-5
+eps = 1e-12
 
 
 class LayerNorm:
@@ -29,19 +29,22 @@ C = 768
 x_path = path/'bins/combined_embeddings.bin'
 b_path = path/'bins/ln_b.bin'
 w_path = path/'bins/ln_w.bin'
+o_path = path/'bins/ln_o.bin'
 assert x_path.exists()
 assert b_path.exists()
 assert w_path.exists()
 b = torch.from_numpy(np.fromfile(b_path, dtype=np.float32))
 w = torch.from_numpy(np.fromfile(w_path, dtype=np.float32))
 x = torch.from_numpy(np.fromfile(x_path, dtype=np.float32)).view(B, T, C)
+o = torch.from_numpy(np.fromfile(o_path, dtype=np.float32)).view(B, T, C)
 
 out, cache = LayerNorm.forward(x, w, b)
 
 # PyTorch LayerNorm
-ln = torch.nn.LayerNorm(C, elementwise_affine=True)
+ln = torch.nn.LayerNorm(C, elementwise_affine=True, eps=eps)
 ln.weight.data = w.clone()
 ln.bias.data = b.clone()
 out_torch = ln(x)
 
 assert torch.allclose(out, out_torch, atol=1e-5)
+assert torch.allclose(o, out_torch, atol=1e-5), "not matching"
