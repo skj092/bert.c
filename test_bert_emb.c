@@ -130,14 +130,27 @@ int main() {
   float *c_out = (float *)malloc(batch_size * seq_length * 768 * sizeof(float));
 
   layernorm_forward(c_out, combined_emb, w, b, batch_size, seq_length, 768);
-  check_tensor(c_out, ref_out,
-               seq_length * batch_size * config.hidden_size,
+  check_tensor(c_out, ref_out, seq_length * batch_size * config.hidden_size,
                "ln_out-val");
+
+  // dropout
+  float *ln_output = c_out;  // Reuse the output from layer norm test
+  float *ref_dropout_out = NULL;
+  float *dropout_output = (float *)malloc(batch_size * seq_length * config.hidden_size * sizeof(float));
+  ref_dropout_out = load_binary_file("bins/dropout_output.bin", &elements);
+  dropout_forward(dropout_output, ln_output, config.hidden_dropout_prob,
+                batch_size, seq_length, config.hidden_size, 0);
+  check_tensor(dropout_output, ref_dropout_out,
+             batch_size * seq_length * config.hidden_size,
+             "dropout-inference-mode");
+
 
   free(w);
   free(b);
   free(ref_out);
   free(c_out);
+  free(dropout_output);
+  free(ref_dropout_out);
 
   return 0;
 }

@@ -123,7 +123,6 @@ class BertEmbeddings(nn.Module):
         save_tensor_as_bin("bins/combined_embeddings.bin", embeddings)
 
         # Apply LayerNorm and Dropout
-        breakpoint()
         with open('bins/ln_i.bin', 'wb') as file:
             write(embeddings, file)
         embeddings = self.LayerNorm(embeddings)
@@ -134,12 +133,12 @@ class BertEmbeddings(nn.Module):
 
         with open('bins/ln_o.bin', 'wb') as file:
             write(embeddings, file)
-        breakpoint()
         # Set eval mode to remove randomness in dropout
         if not self.training:
             embeddings = self.dropout(embeddings)
             save_tensor_as_bin("bins/dropout_output.bin", embeddings)
 
+        breakpoint()
         return embeddings
 
 
