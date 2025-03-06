@@ -29,9 +29,9 @@ BertEmbeddings init_bert_embeddings(BertConfig *config) {
   // Load pretrained weights
   load_weights("bins/weights/embeddings_word_embeddings_weight.bin",
                embeddings.word_embeddings, word_emb_size / sizeof(float));
-  load_weights("bins/bert_position_embeddings.bin",
+  load_weights("./bins/weights/embeddings_position_embeddings_weight.bin",
                embeddings.position_embeddings, pos_emb_size / sizeof(float));
-  load_weights("bins/bert_token_type_embeddings.bin",
+  load_weights("./bins/weights/embeddings_token_type_embeddings_weight.bin",
                embeddings.token_type_embeddings, type_emb_size / sizeof(float));
 
   // Initialize layer norm weights to 1 and biases to 0
@@ -85,26 +85,58 @@ float *bert_embeddings_forward(BertEmbeddings *embeddings, int *input_ids,
   return temp_embeddings;
 }
 
-// // Define the bert_word_embeddings_forward function
-// void bert_word_embeddings_forward(BertEmbeddings *embeddings, int *input_ids,
-//                                   int batch_size, int seq_length,
-//                                   float *output) {
-//   int hidden_size = embeddings->config->hidden_size;
-//
-//   // Directly extract embeddings for each input ID
-//   int total_tokens = batch_size * seq_length;
-//   for (int i = 0; i < total_tokens; i++) {
-//     int word_idx = input_ids[i];
-//
-//     // Bounds check
-//     if (word_idx < 0 || word_idx >= embeddings->config->vocab_size) {
-//       fprintf(stderr, "Error: Invalid word index %d\n", word_idx);
-//       exit(EXIT_FAILURE);
-//     }
-//
-//     // Copy embedding directly to output
-//     memcpy(&output[i * hidden_size],
-//            &embeddings->word_embeddings[word_idx * hidden_size],
-//            hidden_size * sizeof(float));
-//   }
-// }
+// Kahan summation for more accurate floating-point summation
+double kahan_sum(const float *arr, int n) {
+  double sum = 0.0;
+  double c = 0.0; // A running compensation for lost low-order bits
+  for (int i = 0; i < n; i++) {
+    double y = (double)arr[i] - c;
+    double t = sum + y;
+    c = (t - sum) - y;
+    sum = t;
+  }
+  return sum;
+}
+
+void layernorm_forward(float *out, float *inp, float *weight, float *bias,
+                       int B, int T, int C) {
+  // Use more precise epsilon
+  const double eps = 1e-12;
+
+  for (int b = 0; b < B; b++) {
+    for (int t = 0; t < T; t++) {
+      // Pointer to current input slice
+      float *x = inp + b * T * C + t * C;
+
+      // Compute mean using Kahan summation
+      double mean = kahan_sum(x, C) / C;
+
+      // Compute variance
+      double variance = 0.0;
+      double c = 0.0;
+      for (int i = 0; i < C; i++) {
+        double xshift = (double)x[i] - mean;
+        double y = xshift * xshift - c;
+        double t = variance + y;
+        c = (t - variance) - y;
+        variance = t;
+      }
+      variance /= C;
+
+      // Compute reciprocal standard deviation
+      double rstd = 1.0 / sqrt(variance + eps);
+
+      // Pointer to current output slice
+      float *out_bt = out + b * T * C + t * C;
+
+      // Normalize, scale, and shift
+      for (int i = 0; i < C; i++) {
+        // Compute normalized value using high precision
+        double normalized = ((double)x[i] - mean) * rstd;
+
+        // Scale and shift
+        out_bt[i] = (float)(normalized * weight[i] + bias[i]);
+      }
+    }
+  }
+}
