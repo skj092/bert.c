@@ -138,7 +138,6 @@ class BertEmbeddings(nn.Module):
             embeddings = self.dropout(embeddings)
             save_tensor_as_bin("bins/dropout_output.bin", embeddings)
 
-        breakpoint()
         return embeddings
 
 
@@ -205,6 +204,7 @@ class BertSelfAttention(nn.Module):
         return output
 
     def forward(self, x):
+        breakpoint()
         batch_size, seq_length, hidden_size = x.shape
 
         # Save input to this layer
@@ -241,7 +241,9 @@ class BertSelfAttention(nn.Module):
         # Apply attention to values and reshape back
         context = attn_scores.transpose(1, 2).contiguous().view(
             batch_size, seq_length, hidden_size)
+        # breakpoint()
         save_tensor_as_bin(f"bins/layer{self.layer_idx}_context.bin", context)
+        breakpoint()
 
         return (context,)
 
