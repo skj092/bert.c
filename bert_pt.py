@@ -204,7 +204,6 @@ class BertSelfAttention(nn.Module):
         return output
 
     def forward(self, x):
-        breakpoint()
         batch_size, seq_length, hidden_size = x.shape
 
         # Save input to this layer
@@ -243,7 +242,6 @@ class BertSelfAttention(nn.Module):
             batch_size, seq_length, hidden_size)
         # breakpoint()
         save_tensor_as_bin(f"bins/layer{self.layer_idx}_context.bin", context)
-        breakpoint()
 
         return (context,)
 
@@ -527,6 +525,7 @@ if __name__ == "__main__":
     model = BertModelCustom(config)
     model.load_from_pretrained(bert_base)
     model.eval()  # Set to evaluation mode to disable dropout
+    breakpoint()
 
     # Generate outputs from both models for comparison
     with torch.no_grad():

@@ -1,5 +1,5 @@
-#include "../bert.h"
-#include "../bert_emb.c" // Include the original file to reuse its definitions
+#include "../embeddings/bert.h"
+#include "../embeddings/bert_emb.c" // Include the original file to reuse its definitions
 #include <stdio.h>
 #include <stdlib.h>
 
