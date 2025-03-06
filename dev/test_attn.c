@@ -4,133 +4,6 @@
 #include <math.h>
 #include "utils.c"
 
-// poor man's tensor checker
-int check_tensor(float *a, float *b, int n, const char *label) {
-  int print_upto = 4;
-  int ok = 1;
-  float maxdiff = 0.0f;
-  float tol = 2e-2f;
-  printf("%s\n", label);
-  for (int i = 0; i < n; i++) {
-    // look at the diffence at position i of these two tensors
-    float diff = fabsf(a[i] - b[i]);
-
-    // keep track of the overall error
-    ok = ok && (diff <= tol);
-    if (diff > maxdiff) {
-      maxdiff = diff;
-    }
-
-    // for the first few elements of each tensor, pretty print
-    // the actual numbers, so we can do a visual, qualitative proof/assessment
-    if (i < print_upto) {
-      if (diff <= tol) {
-        if (i < print_upto) {
-          printf("OK ");
-        }
-      } else {
-        if (i < print_upto) {
-          printf("NOT OK ");
-        }
-      }
-      printf("%f %f\n", a[i], b[i]);
-    }
-  }
-  // print the final result for this tensor
-  if (ok) {
-    printf("TENSOR OK, maxdiff = %e\n", maxdiff);
-  } else {
-    printf("TENSOR NOT OK, maxdiff = %e\n", maxdiff);
-  }
-  return ok;
-}
-
-
-// Helper function to load tensor from bin file with separate shape file
-float* load_tensor(const char* bin_path, const char* shape_path, int* shape, int max_dims) {
-    FILE* bin_file = fopen(bin_path, "rb");
-    if (!bin_file) {
-        fprintf(stderr, "Error: Could not open file %s\n", bin_path);
-        return NULL;
-    }
-
-    FILE* shape_file = fopen(shape_path, "r");
-    if (!shape_file) {
-        fprintf(stderr, "Error: Could not open shape file %s\n", shape_path);
-        fclose(bin_file);
-        return NULL;
-    }
-
-    // Read shape information
-    char shape_str[256];
-    fgets(shape_str, sizeof(shape_str), shape_file);
-    fclose(shape_file);
-
-    // Parse shape string
-    char* token = strtok(shape_str, ",");
-    int dim_count = 0;
-
-    while (token != NULL && dim_count < max_dims) {
-        shape[dim_count++] = atoi(token);
-        token = strtok(NULL, ",");
-    }
-
-    // Calculate total size
-    int total_size = 1;
-    for (int i = 0; i < dim_count; i++) {
-        total_size *= shape[i];
-    }
-
-    // Allocate memory and read data
-    float* data = (float*)malloc(total_size * sizeof(float));
-    if (!data) {
-        fprintf(stderr, "Error: Memory allocation failed\n");
-        fclose(bin_file);
-        return NULL;
-    }
-
-    size_t read_count = fread(data, sizeof(float), total_size, bin_file);
-    if (read_count != total_size) {
-        fprintf(stderr, "Warning: Expected to read %d elements, but got %ld\n", total_size, read_count);
-        // Continue anyway, as some tensor files might be padded or we might not know the exact size
-    }
-
-    fclose(bin_file);
-    return data;
-}
-
-// Load tensor without shape file (we'll provide the shape directly)
-float* load_tensor_without_shape(const char* bin_path, int* total_size) {
-    FILE* bin_file = fopen(bin_path, "rb");
-    if (!bin_file) {
-        fprintf(stderr, "Error: Could not open file %s\n", bin_path);
-        return NULL;
-    }
-
-    // Get file size
-    fseek(bin_file, 0, SEEK_END);
-    long file_size = ftell(bin_file);
-    fseek(bin_file, 0, SEEK_SET);
-
-    *total_size = file_size / sizeof(float);
-
-    // Allocate memory and read data
-    float* data = (float*)malloc(file_size);
-    if (!data) {
-        fprintf(stderr, "Error: Memory allocation failed\n");
-        fclose(bin_file);
-        return NULL;
-    }
-
-    size_t read_count = fread(data, 1, file_size, bin_file);
-    if (read_count != file_size) {
-        fprintf(stderr, "Warning: Expected to read %ld bytes, but got %ld\n", file_size, read_count);
-    }
-
-    fclose(bin_file);
-    return data;
-}
-
 // Matrix multiplication: C = A * B
 void matmul(float* A, float* B, float* C, int m, int n, int k) {
     for (int i = 0; i < m; i++) {
@@ -231,17 +104,6 @@ void softmax(float* input, float* output, int rows, int cols) {
     }
 }
 
-// Save tensor to a binary file
-void save_tensor_to_bin(const char* filename, float* tensor, int size) {
-    FILE* file = fopen(filename, "wb");
-    if (!file) {
-        fprintf(stderr, "Error: Could not open file %s for writing\n", filename);
-        return;
-    }
-
-    fwrite(tensor, sizeof(float), size, file);
-    fclose(file);
-}
 
 int main() {
     // BERT configuration
@@ -285,38 +147,22 @@ int main() {
 
     // Try to load with shape files first
     printf("Loading model weights and biases...\n");
-
-    FILE* test_shape_file = fopen(query_weight_shape_path, "r");
-    if (test_shape_file) {
-        // Shape files exist, use them
-        fclose(test_shape_file);
-        query_weight = load_tensor(query_weight_path, query_weight_shape_path, weight_shape, 2);
-        key_weight = load_tensor(key_weight_path, key_weight_shape_path, weight_shape, 2);
-        value_weight = load_tensor(value_weight_path, value_weight_shape_path, weight_shape, 2);
-        query_bias = load_tensor(query_bias_path, query_bias_shape_path, bias_shape, 1);
-        key_bias = load_tensor(key_bias_path, key_bias_shape_path, bias_shape, 1);
-        value_bias = load_tensor(value_bias_path, value_bias_shape_path, bias_shape, 1);
-    } else {
-        // Shape files don't exist, load without them (use default shapes)
-        printf("Shape files not found. Using default tensor shapes.\n");
-
-        int total_size;
-        query_weight = load_tensor_without_shape(query_weight_path, &total_size);
-        if (total_size != hidden_size * hidden_size) {
-            printf("Warning: Expected weight size %d, got %d\n", hidden_size * hidden_size, total_size);
-        }
-
-        key_weight = load_tensor_without_shape(key_weight_path, &total_size);
-        value_weight = load_tensor_without_shape(value_weight_path, &total_size);
-
-        query_bias = load_tensor_without_shape(query_bias_path, &total_size);
-        if (total_size != hidden_size) {
-            printf("Warning: Expected bias size %d, got %d\n", hidden_size, total_size);
-        }
-
-        key_bias = load_tensor_without_shape(key_bias_path, &total_size);
-        value_bias = load_tensor_without_shape(value_bias_path, &total_size);
+    int total_size;
+    query_weight = load_tensor(query_weight_path, &total_size);
+    if (total_size != hidden_size * hidden_size) {
+        printf("Warning: Expected weight size %d, got %d\n", hidden_size * hidden_size, total_size);
     }
+
+    key_weight = load_tensor(key_weight_path, &total_size);
+    value_weight = load_tensor(value_weight_path, &total_size);
+
+    query_bias = load_tensor(query_bias_path, &total_size);
+    if (total_size != hidden_size) {
+        printf("Warning: Expected bias size %d, got %d\n", hidden_size, total_size);
+    }
+
+    key_bias = load_tensor(key_bias_path, &total_size);
+    value_bias = load_tensor(value_bias_path, &total_size);
 
     // Check if all weights loaded
     if (!query_weight || !key_weight || !value_weight ||
@@ -335,7 +181,7 @@ int main() {
     // Load input tensor
     printf("Loading input tensor from bins/temp.bin...\n");
     int input_size;
-    float* input_tensor = load_tensor_without_shape("bins/layer0_attn_input.bin", &input_size);
+    float* input_tensor = load_tensor("bins/layer0_attn_input.bin", &input_size);
     print_float_array(input_tensor, 10);
 
     if (!input_tensor) {
@@ -344,24 +190,6 @@ int main() {
         free(query_weight); free(query_bias); free(key_weight);
         free(key_bias); free(value_weight); free(value_bias);
         return 1;
-    }
-
-    // Verify input tensor size
-    if (input_size != batch_size * seq_length * hidden_size) {
-        printf("Warning: Expected input size %d, got %d. Adjusting dimensions...\n",
-               batch_size * seq_length * hidden_size, input_size);
-
-        // // Try to infer correct dimensions
-        // if (input_size % hidden_size == 0) {
-        //     int total_tokens = input_size / hidden_size;
-        //     if (total_tokens % batch_size == 0) {
-        //         seq_length = total_tokens / batch_size;
-        //         printf("Adjusted seq_length to %d\n", seq_length);
-        //     } else if (total_tokens % seq_length == 0) {
-        //         batch_size = total_tokens / seq_length;
-        //         printf("Adjusted batch_size to %d\n", batch_size);
-        //     }
-        // }
     }
 
     printf("Processing with dimensions: batch_size=%d, seq_length=%d, hidden_size=%d, num_heads=%d\n",
@@ -390,11 +218,6 @@ int main() {
     linear_projection(input_tensor, key_weight, key_bias, k_proj, batch_size, seq_length, hidden_size, hidden_size);
     linear_projection(input_tensor, value_weight, value_bias, v_proj, batch_size, seq_length, hidden_size, hidden_size);
 
-    // Save the linear projections
-    save_tensor_to_bin("bins/c_layer0_q_proj.bin", q_proj, total_seq_hidden);
-    save_tensor_to_bin("bins/c_layer0_k_proj.bin", k_proj, total_seq_hidden);
-    save_tensor_to_bin("bins/c_layer0_v_proj.bin", v_proj, total_seq_hidden);
-
     // Reshape for multi-head attention
     printf("Reshaping for multi-head attention...\n");
     const int total_head_seq_dim = batch_size * num_heads * seq_length * head_dim;
@@ -416,11 +239,6 @@ int main() {
     reshape_for_multihead(q_proj, q_reshaped, batch_size, seq_length, num_heads, head_dim);
     reshape_for_multihead(k_proj, k_reshaped, batch_size, seq_length, num_heads, head_dim);
     reshape_for_multihead(v_proj, v_reshaped, batch_size, seq_length, num_heads, head_dim);
-
-    // Save reshaped tensors
-    save_tensor_to_bin("bins/c_layer0_q_reshaped.bin", q_reshaped, total_head_seq_dim);
-    save_tensor_to_bin("bins/c_layer0_k_reshaped.bin", k_reshaped, total_head_seq_dim);
-    save_tensor_to_bin("bins/c_layer0_v_reshaped.bin", v_reshaped, total_head_seq_dim);
 
     // Compute attention scores (Q*K^T) for each batch and head
     printf("Computing attention scores...\n");
@@ -467,11 +285,6 @@ int main() {
         }
     }
 
-    // Save attention matrices
-    save_tensor_to_bin("bins/c_layer0_attn_qk_product.bin", attn_scores, attn_size);
-    save_tensor_to_bin("bins/c_layer0_attn_scaled.bin", attn_scaled, attn_size);
-    save_tensor_to_bin("bins/c_layer0_attn_softmax.bin", attn_softmax, attn_size);
-
     // Compute attention output (softmax * V) for each batch and head
     printf("Computing attention output...\n");
     float* attn_output = (float*)malloc(total_head_seq_dim * sizeof(float));
@@ -497,9 +310,6 @@ int main() {
         }
     }
 
-    // Save attention output
-    save_tensor_to_bin("bins/c_layer0_attn_output.bin", attn_output, total_head_seq_dim);
-
     // Reshape back to original dimensions
     printf("Reshaping output and saving final results...\n");
     float* context = (float*)malloc(total_seq_hidden * sizeof(float));
@@ -518,18 +328,13 @@ int main() {
     reshape_from_multihead(attn_output, context, batch_size, seq_length, num_heads, head_dim);
     print_float_array(attn_output, 10);
 
-    // Save final output
-    save_tensor_to_bin("bins/c_att_out.bin", context, total_seq_hidden);
-
     // Print output dimensions
     printf("Output shape: [%d, %d, %d]\n", batch_size, seq_length, hidden_size);
 
     // verify with torch output
-    // const char* self_attn_output = "bins/att_out.bin";
-    // load_tensor_without_shape(const char *bin_path, int *total_size)
     float* attn_out = NULL;
     int attn_size0;
-    attn_out = load_tensor_without_shape(self_attn_output, &attn_size0);
+    attn_out = load_tensor(self_attn_output, &attn_size0);
     check_tensor(attn_out, attn_output, 10, "attnoutput");
 
     // Free all allocated memory
