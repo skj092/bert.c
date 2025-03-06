@@ -172,6 +172,7 @@ if __name__ == "__main__":
     B, T, C = 2, 128, 768
     x_path = "bins/layer0_attn_input.bin"
     x = torch.from_numpy(np.fromfile(x_path, dtype=np.float32)).view(B, T, C)
+    breakpoint()
 
     print(f"shape of x: {x.shape}")
     att = BertSelfAttention()

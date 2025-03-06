@@ -4,6 +4,48 @@
 #include <math.h>
 #include "utils.c"
 
+// poor man's tensor checker
+int check_tensor(float *a, float *b, int n, const char *label) {
+  int print_upto = 4;
+  int ok = 1;
+  float maxdiff = 0.0f;
+  float tol = 2e-2f;
+  printf("%s\n", label);
+  for (int i = 0; i < n; i++) {
+    // look at the diffence at position i of these two tensors
+    float diff = fabsf(a[i] - b[i]);
+
+    // keep track of the overall error
+    ok = ok && (diff <= tol);
+    if (diff > maxdiff) {
+      maxdiff = diff;
+    }
+
+    // for the first few elements of each tensor, pretty print
+    // the actual numbers, so we can do a visual, qualitative proof/assessment
+    if (i < print_upto) {
+      if (diff <= tol) {
+        if (i < print_upto) {
+          printf("OK ");
+        }
+      } else {
+        if (i < print_upto) {
+          printf("NOT OK ");
+        }
+      }
+      printf("%f %f\n", a[i], b[i]);
+    }
+  }
+  // print the final result for this tensor
+  if (ok) {
+    printf("TENSOR OK, maxdiff = %e\n", maxdiff);
+  } else {
+    printf("TENSOR NOT OK, maxdiff = %e\n", maxdiff);
+  }
+  return ok;
+}
+
+
 // Helper function to load tensor from bin file with separate shape file
 float* load_tensor(const char* bin_path, const char* shape_path, int* shape, int max_dims) {
     FILE* bin_file = fopen(bin_path, "rb");
@@ -210,6 +252,8 @@ int main() {
     const int head_dim = hidden_size / num_heads;
     const int layer_idx = 0;  // Assuming we're processing the first layer
 
+    // self attn output
+    const char* self_attn_output = "bins/att_out.bin";
     // Paths to weight files
     const char* query_weight_path = "bins/tmp/qw.bin";
     const char* key_weight_path = "bins/tmp/kw.bin";
@@ -291,7 +335,8 @@ int main() {
     // Load input tensor
     printf("Loading input tensor from bins/temp.bin...\n");
     int input_size;
-    float* input_tensor = load_tensor_without_shape("bins/temp.bin", &input_size);
+    float* input_tensor = load_tensor_without_shape("bins/layer0_attn_input.bin", &input_size);
+    print_float_array(input_tensor, 10);
 
     if (!input_tensor) {
         fprintf(stderr, "Error: Failed to load input tensor\n");
@@ -305,18 +350,18 @@ int main() {
     if (input_size != batch_size * seq_length * hidden_size) {
         printf("Warning: Expected input size %d, got %d. Adjusting dimensions...\n",
                batch_size * seq_length * hidden_size, input_size);
-    //
-    //     // Try to infer correct dimensions
-    //     if (input_size % hidden_size == 0) {
-    //         int total_tokens = input_size / hidden_size;
-    //         if (total_tokens % batch_size == 0) {
-    //             seq_length = total_tokens / batch_size;
-    //             printf("Adjusted seq_length to %d\n", seq_length);
-    //         } else if (total_tokens % seq_length == 0) {
-    //             batch_size = total_tokens / seq_length;
-    //             printf("Adjusted batch_size to %d\n", batch_size);
-    //         }
-    //     }
+
+        // // Try to infer correct dimensions
+        // if (input_size % hidden_size == 0) {
+        //     int total_tokens = input_size / hidden_size;
+        //     if (total_tokens % batch_size == 0) {
+        //         seq_length = total_tokens / batch_size;
+        //         printf("Adjusted seq_length to %d\n", seq_length);
+        //     } else if (total_tokens % seq_length == 0) {
+        //         batch_size = total_tokens / seq_length;
+        //         printf("Adjusted batch_size to %d\n", batch_size);
+        //     }
+        // }
     }
 
     printf("Processing with dimensions: batch_size=%d, seq_length=%d, hidden_size=%d, num_heads=%d\n",
@@ -454,7 +499,6 @@ int main() {
 
     // Save attention output
     save_tensor_to_bin("bins/c_layer0_attn_output.bin", attn_output, total_head_seq_dim);
-    print_float_array(attn_output, 10);
 
     // Reshape back to original dimensions
     printf("Reshaping output and saving final results...\n");
@@ -479,6 +523,14 @@ int main() {
 
     // Print output dimensions
     printf("Output shape: [%d, %d, %d]\n", batch_size, seq_length, hidden_size);
+
+    // verify with torch output
+    // const char* self_attn_output = "bins/att_out.bin";
+    // load_tensor_without_shape(const char *bin_path, int *total_size)
+    float* attn_out = NULL;
+    int attn_size0;
+    attn_out = load_tensor_without_shape(self_attn_output, &attn_size0);
+    check_tensor(attn_out, attn_output, 10, "attnoutput");
 
     // Free all allocated memory
     printf("Freeing resources...\n");
