@@ -59,7 +59,7 @@ void load_from_checkpoint_bso(BertSelfOutput *bso, BertConfig config) {
   float *out = NULL;
 
   // Try to load with shape files first
-  printf("Loading model weights and biases...\n");
+  // printf("Loading model weights and biases...\n");
   int total_size;
   dw = load_tensor(dense_weight_path, &total_size);
   db = load_tensor(dense_bias_path, &total_size);
@@ -98,7 +98,7 @@ void load_from_checkpoint(BertSelfAttention *bsa, BertConfig config) {
   query_bias = load_tensor(query_bias_path, &total_size);
   key_bias = load_tensor(key_bias_path, &total_size);
   value_bias = load_tensor(value_bias_path, &total_size);
-  printf("model weights and biases loaded..\n");
+  // printf("model weights and biases loaded..\n");
 
   bsa->query_weight = query_weight;
   bsa->query_bias = query_bias;
@@ -122,7 +122,7 @@ void bert_attention_forward(BertSelfAttention BertSelfAttention,
   float *k_proj = (float *)malloc(total_seq_hidden * sizeof(float));
   float *v_proj = (float *)malloc(total_seq_hidden * sizeof(float));
   // Linear projections
-  printf("Computing linear projections...\n");
+  // printf("Computing linear projections...\n");
   linear_projection(input_tensor, BertSelfAttention.query_weight,
                     BertSelfAttention.query_bias, q_proj, batch_size,
                     seq_length, hidden_size, hidden_size);
@@ -133,7 +133,7 @@ void bert_attention_forward(BertSelfAttention BertSelfAttention,
                     BertSelfAttention.value_bias, v_proj, batch_size,
                     seq_length, hidden_size, hidden_size);
   // Reshape for multi-head attention
-  printf("Reshaping for multi-head attention...\n");
+  // printf("Reshaping for multi-head attention...\n");
   const int total_head_seq_dim = batch_size * num_heads * seq_length * head_dim;
   float *q_reshaped = (float *)malloc(total_head_seq_dim * sizeof(float));
   float *k_reshaped = (float *)malloc(total_head_seq_dim * sizeof(float));
@@ -147,7 +147,7 @@ void bert_attention_forward(BertSelfAttention BertSelfAttention,
                         head_dim);
 
   // Compute attention scores (Q*K^T) for each batch and head
-  printf("Computing attention scores...\n");
+  // printf("Computing attention scores...\n");
   const int attn_size = batch_size * num_heads * seq_length * seq_length;
   float *attn_scores = (float *)malloc(attn_size * sizeof(float));
   float *attn_scaled = (float *)malloc(attn_size * sizeof(float));
@@ -182,7 +182,7 @@ void bert_attention_forward(BertSelfAttention BertSelfAttention,
       softmax(scaled_ptr, softmax_ptr, seq_length, seq_length);
     }
   }
-  printf("Computing attention output...\n");
+  // printf("Computing attention output...\n");
   // float *attn_output = (float *)malloc(total_head_seq_dim * sizeof(float));
 
   for (int b = 0; b < batch_size; b++) {
@@ -198,7 +198,7 @@ void bert_attention_forward(BertSelfAttention BertSelfAttention,
     }
   }
   // Reshape back to original dimensions
-  printf("Reshaping output and saving final results...\n");
+  // printf("Reshaping output and saving final results...\n");
   float *context = (float *)malloc(total_seq_hidden * sizeof(float));
 
   reshape_from_multihead(attn_output, context, batch_size, seq_length,
@@ -220,6 +220,7 @@ void bert_output_forward(BertSelfOutput bert_self_output, float *output,
   matmul_forward(temp_buffer, hidden_states, bert_self_output.dense_weight,
                  bert_self_output.dense_bias, B, T, C, C);
 
+  print_float_array(temp_buffer, 10);
   // 2. Apply dropout (during inference, this is identity)
   apply_dropout(temp_buffer, temp_buffer, bert_self_output.dropout_prob,
                 B * T * C);
@@ -232,7 +233,7 @@ void bert_output_forward(BertSelfOutput bert_self_output, float *output,
     return;
   }
   add_tensors(residual, temp_buffer, input_tensor, B * T * C);
-  print_float_array(residual, 10);
+  // print_float_array(residual, 10);
 
   // 4. Apply layer normalization: output = self.LayerNorm(residual)
   layernorm_forward_cpu(output, residual, bert_self_output.layer_norm_weight,
@@ -240,8 +241,8 @@ void bert_output_forward(BertSelfOutput bert_self_output, float *output,
                         bert_self_output.layer_norm_eps);
 
   // Print some values for debugging
-  printf("Output after layer norm:\n");
-  print_float_array(output, 10);
+  // printf("Output after layer norm:\n");
+  // print_float_array(output, 10);
 
   // Free temporary buffers
   free(temp_buffer);
@@ -249,7 +250,15 @@ void bert_output_forward(BertSelfOutput bert_self_output, float *output,
 }
 
 void attention_forward(BertAttention attention, BertConfig configuration,
-                      float *input, float *output) {}
+                       float *input, float *output) {
+
+  bert_attention_forward(attention.self, input, output);
+  // bert_output_forward(BertSelfOutput bert_self_output, float *output, float
+  // *hidden_states, float *input_tensor, int B, int T, int C)
+  float *c_out = (float *)malloc(2 * 128 * 768 * sizeof(float));
+  bert_output_forward(attention.output, c_out, output, input, 2, 128, 768);
+  // print_float_array(c_out, 10);
+}
 
 int main() {
   // BERT configuration
@@ -273,55 +282,22 @@ int main() {
   attention.self = SelfAttention;
   attention.output = bert_self_output;
 
-  // ================Self Attention==============
-  // self attn output
-  const char *self_attn_output = "bins/att_out.bin";
-
-  // Load model weights - if shape files don't exist, we'll infer the shape
-  int weight_shape[2] = {hidden_size, hidden_size}; // Default shape for weights
-  int bias_shape[1] = {hidden_size};                // Default shape for biases
-
-  // Load input tensor
-  printf("Loading input tensor from bins/temp.bin...\n");
+  const char *so_path = "bins/layer0_self_output_layernorm.bin";
+  float *out = NULL;
+  int total_size;
   int input_size;
   float *input_tensor = load_tensor("bins/layer0_attn_input.bin", &input_size);
-  print_float_array(input_tensor, 10);
+  out = load_tensor(so_path, &total_size);
+  // print_float_array(input_tensor, 10); // bert_pt.py :375
 
   float *context = (float *)malloc(total_seq_hidden * sizeof(float));
-  bert_attention_forward(SelfAttention, input_tensor, context);
+  attention_forward(attention, config, input_tensor, context);
+  // check_tensor(context, out, 10, "bso");
 
-  float *attn_out = NULL;
-  int attn_size0;
-  attn_out = load_tensor(self_attn_output, &attn_size0);
-  check_tensor(context, attn_out, 10, "attnoutput");
-
-  //================Self Output======================
-  const char *h_path = "bins/t1.bin";
-  const char *x_path = "bins/tw.bin";
-  const char *so_path = "bins/layer0_self_output_layernorm.bin";
-  float *h = NULL;
-  float *x = NULL;
-  float *out = NULL;
-  int out_size;
-  float *c_out = (float *)malloc(2 * 128 * 768 * sizeof(float));
-  int total_size;
-  h = load_tensor(h_path, &total_size);
-  x = load_tensor(x_path, &total_size);
-
-  out = load_tensor(so_path, &total_size);
-
-  bert_output_forward(bert_self_output, c_out, h, x, 2, 128, 768);
-  check_tensor(c_out, out, 10, "bso");
-  //===========================================
-
-  // Free the input_tensor loaded from file
-  free(input_tensor);
-
-  // Free the context buffer allocated in main
   free(context);
 
   // Free the attention output loaded for verification
-  free(attn_out);
+  // free(attn_out);
 
   // Free the SelfAttention model parameters
   free(SelfAttention.query_weight);
@@ -332,8 +308,8 @@ int main() {
   free(SelfAttention.value_bias);
 
   // Free all allocated memory
-  free(h);
-  free(x);
+  // free(h);
+  // free(x);
   free(out);
   free(bert_self_output.dense_weight);
   free(bert_self_output.dense_bias);
