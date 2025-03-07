@@ -1,9 +1,7 @@
 from dataclasses import dataclass
 import torch
 import torch.nn as nn
-import math
 import numpy as np
-import os
 
 
 def write(tensor, handle):
@@ -19,26 +17,6 @@ def set_seed(seed):
 
 
 set_seed(42)
-
-
-# def save_tensor_as_bin(filename, tensor):
-#     """Save tensor to binary file with proper format for C consumption"""
-#     # Create directory if it doesn't exist
-#     os.makedirs(os.path.dirname(filename), exist_ok=True)
-#
-#     # Save as float32 (C's float) for most tensors
-#     if tensor.dtype in [torch.float32, torch.float]:
-#         tensor.detach().cpu().numpy().astype(np.float32).tofile(filename)
-#     # Save as int32 for integer tensors
-#     elif tensor.dtype in [torch.int32, torch.int64, torch.long, torch.int]:
-#         tensor.detach().cpu().numpy().astype(np.int32).tofile(filename)
-#     else:
-#         print(f"Warning: Unhandled dtype {tensor.dtype} for {filename}")
-#         tensor.detach().cpu().numpy().tofile(filename)
-#
-#     # Also save shape information for easier loading in C
-#     with open(f"{filename}.shape", "w") as f:
-#         f.write(",".join(str(dim) for dim in tensor.shape))
 
 
 db_path = "bins/weights/encoder_layer_0_attention_output_dense_bias.bin"
@@ -66,33 +44,19 @@ class BertSelfOutput(nn.Module):
             np.fromfile(lnb_path, dtype=np.float32))
 
     def forward(self, hidden_states: torch.Tensor, input_tensor: torch.Tensor) -> torch.Tensor:
-        breakpoint()
-        # Save inputs
-        # save_tensor_as_bin(
-        #     f"bins/layer{self.layer_idx}_self_output_hidden_states.bin", hidden_states)
-        # save_tensor_as_bin(
-        #     f"bins/layer{self.layer_idx}_self_output_input_tensor.bin", input_tensor)
-
         # Linear projection
         hidden_states = self.dense(hidden_states)
-        # save_tensor_as_bin(
-        #     f"bins/layer{self.layer_idx}_self_output_dense.bin", hidden_states)
+        breakpoint()
 
         # Dropout (in eval mode, this is identity)
         if not self.training:
             hidden_states = self.dropout(hidden_states)
-            # save_tensor_as_bin(
-            #     f"bins/layer{self.layer_idx}_self_output_dropout.bin", hidden_states)
 
         # Residual connection
         residual = hidden_states + input_tensor
-        # save_tensor_as_bin(
-        #     f"bins/layer{self.layer_idx}_self_output_residual.bin", residual)
 
         # Layer normalization
         normalized = self.LayerNorm(residual)
-        # save_tensor_as_bin(
-        #     f"bins/layer{self.layer_idx}_self_output_layernorm.bin", normalized)
 
         return normalized
 
@@ -112,11 +76,6 @@ class BertConfig:
     layer_norm_eps: float = 1e-12
     pad_token_id: int = 0
 
-    # save_tensor_as_bin(
-    #     f"bins/layer{self.layer_idx}_self_output_hidden_states.bin", hidden_states)
-    # save_tensor_as_bin(
-    #     f"bins/layer{self.layer_idx}_self_output_input_tensor.bin", input_tensor)
-
 
 if __name__ == "__main__":
     B, T, C = 2, 128, 768
@@ -125,9 +84,9 @@ if __name__ == "__main__":
     x_path = "bins/tw.bin"
     x = torch.from_numpy(np.fromfile(x_path, dtype=np.float32)).view(B, T, C)
     h = torch.from_numpy(np.fromfile(h_path, dtype=np.float32)).view(B, T, C)
-    breakpoint()
 
     print(f"shape of x: {x.shape}")
     so = BertSelfOutput(config)
     out = so(h, x)
     print(out)
+    breakpoint()
