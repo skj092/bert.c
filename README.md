@@ -18,7 +18,7 @@ By Following [llm.c](https://github.com/karpathy/llm.c), I am gonna try to imple
 - Encoders
     - BertAttention
         - [x] BertSelfAttention
-        - [ ] BertSelfOutput
+        - [x] BertSelfOutput
     - [ ] BertIntermediate
     - [ ] BertOutput
 - [ ] BertPooler
