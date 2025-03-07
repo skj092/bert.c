@@ -96,3 +96,125 @@ float* load_tensor(const char* bin_path, int* total_size) {
     return data;
 }
 
+void matmul_forward_naive(float* out,
+                         const float* inp, const float* weight, const float* bias,
+                         int B, int T, int C, int OC) {
+    // the most naive implementation of matrix multiplication
+    // this serves as an algorithmic reference, and as a fallback for
+    // unfriendly input shapes inside matmul_forward(), below.
+    #pragma omp parallel for collapse(2)
+    for (int b = 0; b < B; b++) {
+        for (int t = 0; t < T; t++) {
+            int bt = b * T + t;
+            for (int o = 0; o < OC; o++) {
+                float val = (bias != NULL) ? bias[o] : 0.0f;
+                for (int i = 0; i < C; i++) {
+                    val += inp[bt * C + i] * weight[o*C + i];
+                }
+                out[bt * OC + o] = val;
+            }
+        }
+    }
+}
+
+
+
+
+void matmul_forward(float* out,
+                    const float* inp, const float* weight, const float* bias,
+                    int B, int T, int C, int OC) {
+    // most of the running time is spent here and in matmul_backward
+    // therefore, the implementation below is very mildly optimized
+    // this function is otherwise identical to that of matmul_forward_naive()
+    // OC is short for "output channels"
+    // inp is (B,T,C), weight is (OC, C), bias is (OC)
+    // out will be (B,T,OC)
+
+    // make sure the tiled loop will be correct or fallback to naive version
+    const int LOOP_UNROLL = 8;
+    if (B*T % LOOP_UNROLL != 0) {
+        matmul_forward_naive(out, inp, weight, bias, B, T, C, OC);
+        return;
+    }
+
+    // collapse the B and T loops into one and turn it into a strided loop.
+    // then we can tile the inner loop, and reuse the loaded weight LOOP_UNROLL many times
+    #pragma omp parallel for
+    for (int obt = 0; obt < B * T; obt += LOOP_UNROLL) {
+        for (int o = 0; o < OC; o++) {
+            // we'll keep LOOP_UNROLL many results in registers
+            float result[LOOP_UNROLL];
+            // initialize the bias, if it exists
+            for (int ibt = 0; ibt < LOOP_UNROLL; ibt++) {
+                result[ibt] = (bias != NULL) ? bias[o] : 0.0f;
+            }
+            // inner loops. Because we do LOOP_UNROLL steps of inner bt, we can cache
+            // the value of weight[i + o * C] and reuse it.
+            // we compile with -Ofast, so the compiler will turn the inner loop into FMAs
+            for (int i = 0; i < C; i++) {
+                float w = weight[i + o * C];
+                for (int ibt = 0; ibt < LOOP_UNROLL; ibt++) {
+                    int bt = obt + ibt;
+                    result[ibt] += inp[bt * C + i] * w;
+                }
+            }
+            // write back results to main memory
+            for (int ibt = 0; ibt < LOOP_UNROLL; ibt++) {
+                int bt = obt + ibt;
+                out[bt * OC + o] = result[ibt];
+            }
+        }
+    }
+}
+
+// Apply element-wise addition
+void add_tensors(float *out, const float *a, const float *b, int size) {
+    for (int i = 0; i < size; i++) {
+        out[i] = a[i] + b[i];
+    }
+}
+
+// Apply dropout (for inference mode, this is just a copy operation)
+void apply_dropout(float *out, const float *inp, float dropout_prob, int size) {
+    // During inference, dropout is identity function
+    if (dropout_prob == 0.0f) {
+        memcpy(out, inp, size * sizeof(float));
+        return;
+    }
+
+    // During training (not implemented for simplicity)
+    memcpy(out, inp, size * sizeof(float));
+}
+
+void layernorm_forward_cpu(float *out, const float *inp, const float *weight,
+                           const float *bias, int B, int T, int C, float eps) {
+  for (int b = 0; b < B; b++) {
+    for (int t = 0; t < T; t++) {
+      // seek to the input position inp[b,t,:]
+      const float *x = inp + b * T * C + t * C;
+      // calculate the mean
+      float m = 0.0f;
+      for (int i = 0; i < C; i++) {
+        m += x[i];
+      }
+      m = m / C;
+      // calculate the variance (without any bias correction)
+      float v = 0.0f;
+      for (int i = 0; i < C; i++) {
+        float xshift = x[i] - m;
+        v += xshift * xshift;
+      }
+      v = v / C;
+      // calculate the rstd
+      float s = 1.0f / sqrtf(v + eps);
+      // seek to the output position in out[b,t,:]
+      float *out_bt = out + b * T * C + t * C;
+      for (int i = 0; i < C; i++) {
+        float n = (s * (x[i] - m));        // normalized output
+        float o = n * weight[i] + bias[i]; // scale and shift it
+        out_bt[i] = o;                     // write
+      }
+    }
+  }
+}
+
