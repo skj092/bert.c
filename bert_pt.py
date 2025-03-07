@@ -321,11 +321,20 @@ class BertSelfOutput(nn.Module):
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
 
     def forward(self, hidden_states: torch.Tensor, input_tensor: torch.Tensor) -> torch.Tensor:
+        breakpoint()
+        B, T, C = 2, 128, 768
         # Save inputs
-        save_tensor_as_bin(
-            f"bins/layer{self.layer_idx}_self_output_hidden_states.bin", hidden_states)
-        save_tensor_as_bin(
-            f"bins/layer{self.layer_idx}_self_output_input_tensor.bin", input_tensor)
+        p = 'bins/t1.bin'
+        t = 'bins/tw.bin'
+        # save_tensor_as_bin(
+        #     f"bins/layer{self.layer_idx}_self_output_hidden_states.bin", hidden_states)
+        # save_tensor_as_bin(
+        #     f"bins/layer{self.layer_idx}_self_output_input_tensor.bin", input_tensor)
+        save_tensor_as_bin(p, hidden_states)
+        save_tensor_as_bin(t, input_tensor)
+
+        x = torch.from_numpy(np.fromfile(p, dtype=np.float32)).view(B, T, C)
+        x = torch.from_numpy(np.fromfile(t, dtype=np.float32)).view(B, T, C)
 
         # Linear projection
         hidden_states = self.dense(hidden_states)
@@ -347,6 +356,7 @@ class BertSelfOutput(nn.Module):
         normalized = self.LayerNorm(residual)
         save_tensor_as_bin(
             f"bins/layer{self.layer_idx}_self_output_layernorm.bin", normalized)
+        breakpoint()
 
         return normalized
 
