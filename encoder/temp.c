@@ -1,5 +1,5 @@
-#include "attention/utils.c"
-#include "encoder/bert_utils.c"
+#include "../attention/utils.c"
+#include "../encoder/bert_utils.c"
 #include <math.h>
 #include <stdbool.h>
 #include <stddef.h>
