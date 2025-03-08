@@ -240,7 +240,6 @@ class BertSelfAttention(nn.Module):
         # Apply attention to values and reshape back
         context = attn_scores.transpose(1, 2).contiguous().view(
             batch_size, seq_length, hidden_size)
-        # breakpoint()
         save_tensor_as_bin(f"bins/layer{self.layer_idx}_context.bin", context)
 
         return (context,)
@@ -264,7 +263,6 @@ class BertIntermediate(nn.Module):
             f"bins/layer{self.layer_idx}_intermediate_dense.bin", xb)
 
         # Activation
-        breakpoint()
         out = self.intermediate_act_fn(xb)
         save_tensor_as_bin(
             f"bins/layer{self.layer_idx}_intermediate_activation.bin", out)
@@ -356,7 +354,6 @@ class BertSelfOutput(nn.Module):
         normalized = self.LayerNorm(residual)
         save_tensor_as_bin(
             f"bins/layer{self.layer_idx}_self_output_layernorm.bin", normalized)
-        breakpoint()
 
         return normalized
 
@@ -548,6 +545,7 @@ if __name__ == "__main__":
 
         # Custom model output
         sequence_output, pooled_output = model(input_ids)
+        breakpoint()
 
         # Verify outputs match
         if torch.allclose(out1.last_hidden_state, sequence_output, atol=1e-5):

@@ -19,9 +19,9 @@ By Following [llm.c](https://github.com/karpathy/llm.c), I am gonna try to imple
     - BertAttention
         - [x] BertSelfAttention
         - [x] BertSelfOutput
-    - [ ] BertIntermediate
-    - [ ] BertOutput
-- [ ] BertPooler
+    - [x] BertIntermediate
+    - [x] BertOutput
+- [x] BertPooler
 
 
 

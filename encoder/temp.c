@@ -59,6 +59,50 @@ typedef struct {
   BertOutput output;
 } BertLayer;
 
+void load_output_checkpoint(BertOutput *bo, BertConfig config) {
+  const char *paths[] = {
+      "bins/weights/encoder_layer_0_output_dense_weight.bin",
+      "bins/weights/encoder_layer_0_output_dense_bias.bin",
+      "bins/weights/encoder_layer_0_output_LayerNorm_weight.bin",
+      "bins/weights/encoder_layer_0_output_LayerNorm_bias.bin",
+  };
+
+  printf("Loading model weights and biases...\n");
+  int total_size;
+
+  bo->dense_weight = load_tensor(paths[0], &total_size);
+  if (!bo->dense_weight) {
+    fprintf(stderr, "Error loading dense_weight\n");
+    return;
+  }
+
+  bo->dense_bias = load_tensor(paths[1], &total_size);
+  if (!bo->dense_bias) {
+    fprintf(stderr, "Error loading dense_bias\n");
+    free(bo->dense_weight);
+    return;
+  }
+
+  bo->layer_norm_weight = load_tensor(paths[2], &total_size);
+  if (!bo->layer_norm_weight) {
+    fprintf(stderr, "Error loading layer_norm_weight\n");
+    free(bo->dense_weight);
+    free(bo->dense_bias);
+    return;
+  }
+
+  bo->layer_norm_bias = load_tensor(paths[3], &total_size);
+  if (!bo->layer_norm_bias) {
+    fprintf(stderr, "Error loading layer_norm_bias\n");
+    free(bo->dense_weight);
+    free(bo->dense_bias);
+    free(bo->layer_norm_weight);
+    return;
+  }
+
+  bo->layer_norm_eps = config.layer_norm_eps;
+  bo->dropout_prob = config.hidden_dropout_prob;
+}
 void load_intermediate_checkpoint(BertIntermediate *intermediate,
                                   BertConfig config) {
   const char *paths[] = {
@@ -321,6 +365,42 @@ cleanup_reshape:
   free(q_proj);
   free(context);
 }
+void bert_output_forward(BertOutput bo, float *output, float *hidden_states,
+                         float *input_tensor, int B, int T, int C) {
+  float *temp_buffer = malloc(B * T * C * sizeof(float));
+  if (!temp_buffer) {
+    fprintf(stderr, "Error: Memory allocation failed for temp buffer\n");
+    return;
+  }
+  printf("bertoutput\n");
+
+  matmul_forward(temp_buffer, hidden_states, bo.dense_weight, bo.dense_bias, B,
+                 T, C, C);
+  print_float_array(temp_buffer, 5);
+  apply_dropout(temp_buffer, temp_buffer, bo.dropout_prob, B * T * C);
+
+  float *residual = malloc(B * T * C * sizeof(float));
+  if (!residual) {
+    fprintf(stderr, "Error: Memory allocation failed for residual\n");
+    free(temp_buffer);
+    return;
+  }
+
+  add_tensors(residual, temp_buffer, input_tensor, B * T * C);
+  layernorm_forward_cpu(output, residual, bo.layer_norm_weight,
+                        bo.layer_norm_bias, B, T, C, bo.layer_norm_eps);
+
+  float *l_fch_gelu = malloc(2 * 128 * 768 * sizeof(float));
+  int total_size;
+  // print_float_array(l_fch_gelu, 5);
+  float *oo = load_tensor("bins/layer0_output_layernorm.bin", &total_size);
+  if (oo) {
+    check_tensor(oo, output, 5, "intermediate activation output");
+    free(oo);
+    free(temp_buffer);
+    free(residual);
+  }
+}
 
 void bert_selfoutput_forward(BertSelfOutput bso, float *output,
                              float *hidden_states, float *input_tensor, int B,
@@ -376,6 +456,8 @@ int main() {
   BertConfig config = default_config();
   const int total_seq_hidden = 2 * 128 * 768;
 
+  // ===============Initialize and load module=================
+  //
   BertSelfAttention self_attention;
   load_from_checkpoint(&self_attention, config);
   if (!self_attention.query_weight || !self_attention.key_weight ||
@@ -399,10 +481,19 @@ int main() {
     fprintf(stderr, "Failed to load self output weights\n");
     goto cleanup_intermediate;
   }
-  printf("intermediate dense bias and weight");
-  // print_float_array(intermediate.dense_bias, 5);
-  // print_float_array(intermediate.dense_weight, 5);
 
+  BertOutput bertoutput;
+  load_output_checkpoint(&bertoutput, config);
+  if (!bertoutput.dense_weight || !bertoutput.dense_bias ||
+      !bertoutput.layer_norm_weight || !bertoutput.layer_norm_bias) {
+    fprintf(stderr, "Failed to load self output weights\n");
+    goto cleanup_bertoutput;
+  }
+  print_float_array(bertoutput.dense_weight, 5);
+  print_float_array(bertoutput.dense_bias, 5);
+  print_float_array(bertoutput.layer_norm_weight, 5);
+  print_float_array(bertoutput.layer_norm_bias, 5);
+  // ===============Encoder Atention=================
   BertAttention attention = {self_attention, self_output};
 
   int input_size;
@@ -421,16 +512,24 @@ int main() {
 
   attention_forward(attention, config, input_tensor, output);
 
+  // ===============Encoder Intermediate=================
   float *inter_out = malloc(total_seq_hidden * sizeof(float));
   if (!inter_out) {
     fprintf(stderr, "Memory allocation failed for output\n");
     free(inter_out);
     goto cleanup_intermediate;
   }
-  // intermediate_forward(BertIntermediate intermediate, float *input, float
-  // *output)
   intermediate_forward(intermediate, output, inter_out);
 
+  // ===============Encoder Output=================
+  float *bout = malloc(total_seq_hidden * sizeof(float));
+  if (!bout) {
+    fprintf(stderr, "Memory allocation failed for output\n");
+    free(bout);
+    goto cleanup_bertoutput;
+  }
+  bert_output_forward(bertoutput, bout, input_tensor, output, 2, 128, 768);
+  print_float_array(bout, 5);
   free(input_tensor);
   free(output);
 
@@ -442,6 +541,12 @@ cleanup_self_output:
   free(self_output.layer_norm_weight);
   free(self_output.dense_bias);
   free(self_output.dense_weight);
+
+cleanup_bertoutput:
+  free(bertoutput.layer_norm_bias);
+  free(bertoutput.layer_norm_weight);
+  free(bertoutput.dense_bias);
+  free(bertoutput.dense_weight);
 
 cleanup_self_attention:
   free(self_attention.value_bias);
