@@ -467,6 +467,36 @@ class BertModelCustom(nn.Module):
         self.pooler = BertPooler(config)
         self.config = config
 
+    def save_checkpoint(self, filename):
+        """Save all model parameters into a single binary file"""
+        os.makedirs(os.path.dirname(filename), exist_ok=True)
+        with open(filename, 'wb') as f:
+            # Write header with version and config info
+            f.write(b"BERTv1")  # Version identifier
+            config_array = np.array([
+                self.config.hidden_size,
+                self.config.num_hidden_layers,
+                self.config.num_attention_heads,
+                self.config.intermediate_size,
+                self.config.vocab_size,
+                self.config.max_position_embeddings,
+                self.config.type_vocab_size
+            ], dtype=np.int32)
+            f.write(config_array.tobytes())
+            print(f"Wrote config: {config_array}")  # Debug print
+
+            # Save all parameters in order
+            state_dict = self.state_dict()
+            for name, param in state_dict.items():
+                name_bytes = name.encode('utf-8')
+                f.write(np.array([len(name_bytes)], dtype=np.int32).tobytes())
+                f.write(name_bytes)
+                shape = list(param.shape)
+                f.write(np.array([len(shape)], dtype=np.int32).tobytes())
+                f.write(np.array(shape, dtype=np.int32).tobytes())
+                param_data = param.detach().cpu().numpy().astype(np.float32)
+                f.write(param_data.tobytes())
+
     def load_from_pretrained(self, bert_base):
         hf_sd = bert_base.state_dict()
 
@@ -503,34 +533,6 @@ class BertModelCustom(nn.Module):
 
         return sequence_output, pooled_output
 
-    def save_checkpoint(self, filename):
-        os.makedirs(os.path.dirname(filename), exist_ok=True)
-        with open(filename, 'wb') as f:
-            f.write(b"BERTv1")
-            config_array = np.array([self.config.hidden_size,
-                                     self.config.num_hidden_layers,
-                                     self.config.num_attention_heads,
-                                     self.config.intermediate_size,
-                                     self.config.vocab_size,
-                                     self.config.max_position_embeddings,
-                                     self.config.type_vocab_size], dtype=np.int32)
-            print("Writing config:", config_array)  # Debug print
-            f.write(config_array.tobytes())
-            # Save all parameters in order
-            state_dict = self.state_dict()
-            for name, param in state_dict.items():
-                # Write parameter name length and name
-                name_bytes = name.encode('utf-8')
-                f.write(np.array([len(name_bytes)], dtype=np.int32).tobytes())
-                f.write(name_bytes)
-                # Write parameter shape
-                shape = list(param.shape)
-                f.write(np.array([len(shape)], dtype=np.int32).tobytes())
-                f.write(np.array(shape, dtype=np.int32).tobytes())
-                # Write parameter data
-                param_data = param.detach().cpu().numpy().astype(np.float32)
-                f.write(param_data.tobytes())
-
 
 def save_model_config(config):
     """Save model configuration as a text file for C implementation"""
@@ -541,41 +543,30 @@ def save_model_config(config):
 
 
 if __name__ == "__main__":
-    # Create config and save it
     config = BertConfig()
     save_model_config(config)
 
-    # Generate inputs
     input_ids, attention_mask, token_type_ids = generate_random_input()
 
-    # Save inputs
-    save_tensor_as_bin("bins/input_ids.bin", input_ids)
-    save_tensor_as_bin("bins/attention_mask.bin", attention_mask)
-    save_tensor_as_bin("bins/token_type_ids.bin", token_type_ids)
-
-    # Load base BERT model
     bert_base = BertModel.from_pretrained("bert-base-uncased")
-    bert_base.eval()  # Set to evaluation mode to disable dropout
+    bert_base.eval()
 
-    # Create custom model and load weights
     model = BertModelCustom(config)
     model.load_from_pretrained(bert_base)
-    model.eval()  # Set to evaluation mode to disable dropout
+    model.eval()
+
+    # Save the entire model as a single checkpoint
     model.save_checkpoint("bins/bert_base.bin")
 
-    # Generate outputs from both models for comparison
     with torch.no_grad():
-        # Original model output
         out1 = bert_base(input_ids)
         save_tensor_as_bin(
             "bins/original_last_hidden_state.bin", out1.last_hidden_state)
         save_tensor_as_bin(
             "bins/original_pooler_output.bin", out1.pooler_output)
 
-        # Custom model output
         sequence_output, pooled_output = model(input_ids)
 
-        # Verify outputs match
         if torch.allclose(out1.last_hidden_state, sequence_output, atol=1e-5):
             print("✅ Last hidden state outputs match!")
         else:
