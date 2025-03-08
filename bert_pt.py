@@ -264,6 +264,7 @@ class BertIntermediate(nn.Module):
             f"bins/layer{self.layer_idx}_intermediate_dense.bin", xb)
 
         # Activation
+        breakpoint()
         out = self.intermediate_act_fn(xb)
         save_tensor_as_bin(
             f"bins/layer{self.layer_idx}_intermediate_activation.bin", out)
