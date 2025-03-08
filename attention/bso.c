@@ -99,9 +99,15 @@ void bert_output_forward(BertSelfOutput bert_self_output, float *output,
     return;
   }
 
+  // print_float_array(temp_buffer, 5);
+  print_float_array(hidden_states, 5);
+  // print_float_array(bert_self_output.dense_weight, 5);
+  // print_float_array(bert_self_output.dense_bias, 5);
+  // printf("Dimensions: B=%d T=%d C=%d C=%d\n", B, T, C, C);
   // 1. Linear projection: hidden_states = self.dense(hidden_states)
   matmul_forward(temp_buffer, hidden_states, bert_self_output.dense_weight,
                  bert_self_output.dense_bias, B, T, C, C);
+  print_float_array(temp_buffer, 5);
 
   // 2. Apply dropout (during inference, this is identity)
   apply_dropout(temp_buffer, temp_buffer, bert_self_output.dropout_prob,
@@ -115,7 +121,6 @@ void bert_output_forward(BertSelfOutput bert_self_output, float *output,
     return;
   }
   add_tensors(residual, temp_buffer, input_tensor, B * T * C);
-  print_float_array(residual, 10);
 
   // 4. Apply layer normalization: output = self.LayerNorm(residual)
   layernorm_forward_cpu(output, residual, bert_self_output.layer_norm_weight,
@@ -124,7 +129,7 @@ void bert_output_forward(BertSelfOutput bert_self_output, float *output,
 
   // Print some values for debugging
   printf("Output after layer norm:\n");
-  print_float_array(output, 10);
+  // print_float_array(output, 10);
 
   // Free temporary buffers
   free(temp_buffer);
@@ -146,16 +151,16 @@ int main() {
   float *x = NULL;
   float *out = NULL;
   int out_size;
-  float* c_out = (float*)malloc(2 * 128 * 768 * sizeof(float));
+  float *c_out = (float *)malloc(2 * 128 * 768 * sizeof(float));
   int total_size;
   h = load_tensor(h_path, &total_size);
   x = load_tensor(x_path, &total_size);
+  printf("loading h and x\n");
 
   out = load_tensor(so_path, &total_size);
 
   bert_output_forward(bert_self_output, c_out, h, x, 2, 128, 768);
-  check_tensor(c_out, out, 10, "bso");
-
+  // check_tensor(c_out, out, 10, "bso");
 
   // Free all allocated memory
   free(h);

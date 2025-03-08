@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <stdbool.h>
 
 // Helper function to print an array of floats
 void print_float_array(float *array, size_t size) {
@@ -166,6 +167,109 @@ void matmul_forward(float* out,
         }
     }
 }
+
+// void matmul_forward(float* out,
+//                     const float* inp, const float* weight, const float* bias,
+//                     int B, int T, int C, int OC) {
+//     printf("Starting matmul_forward with dimensions: B=%d, T=%d, C=%d, OC=%d\n", B, T, C, OC);
+//
+//     // Check if unrolling is being used
+//     const int LOOP_UNROLL = 8;
+//     if (B*T % LOOP_UNROLL != 0) {
+//         printf("Falling back to naive implementation (B*T=%d is not divisible by %d)\n", B*T, LOOP_UNROLL);
+//         matmul_forward_naive(out, inp, weight, bias, B, T, C, OC);
+//         return;
+//     }
+//
+//     printf("Using optimized implementation with loop unrolling=%d\n", LOOP_UNROLL);
+//
+//     // Debug the first few elements of input and weight arrays
+//     printf("First 5 elements of inp: ");
+//     for (int i = 0; i < 5; i++) {
+//         printf("%.6f ", inp[i]);
+//     }
+//     printf("\n");
+//
+//     printf("First 5 elements of weight: ");
+//     for (int i = 0; i < 5; i++) {
+//         printf("%.6f ", weight[i]);
+//     }
+//     printf("\n");
+//
+//     printf("First 5 elements of bias: ");
+//     if (bias != NULL) {
+//         for (int i = 0; i < 5; i++) {
+//             printf("%.6f ", bias[i]);
+//         }
+//     } else {
+//         printf("NULL");
+//     }
+//     printf("\n");
+//
+//     // collapse the B and T loops into one and turn it into a strided loop.
+//     // then we can tile the inner loop, and reuse the loaded weight LOOP_UNROLL many times
+//     #pragma omp parallel for
+//     for (int obt = 0; obt < B * T; obt += LOOP_UNROLL) {
+//         for (int o = 0; o < OC; o++) {
+//             // Debug only for the first few output elements
+//             bool debug_this = (obt == 0 && o < 5);
+//
+//             // we'll keep LOOP_UNROLL many results in registers
+//             float result[LOOP_UNROLL];
+//             // initialize the bias, if it exists
+//             for (int ibt = 0; ibt < LOOP_UNROLL; ibt++) {
+//                 result[ibt] = (bias != NULL) ? bias[o] : 0.0f;
+//
+//                 if (debug_this && ibt == 0) {
+//                     printf("Initial result[0] for o=%d: %.6f\n", o, result[ibt]);
+//                 }
+//             }
+//
+//             // inner loops. Because we do LOOP_UNROLL steps of inner bt, we can cache
+//             // the value of weight[i + o * C] and reuse it.
+//             // we compile with -Ofast, so the compiler will turn the inner loop into FMAs
+//             for (int i = 0; i < C; i++) {
+//                 float w = weight[i + o * C];
+//
+//                 // Debug the first few iterations for the first few outputs
+//                 if (debug_this && i < 5) {
+//                     printf("o=%d, i=%d, weight=%.6f\n", o, i, w);
+//                 }
+//
+//                 for (int ibt = 0; ibt < LOOP_UNROLL; ibt++) {
+//                     int bt = obt + ibt;
+//                     float inp_val = inp[bt * C + i];
+//                     float old_result = result[ibt];
+//                     result[ibt] += inp_val * w;
+//
+//                     // Debug only the first few iterations for the first output
+//                     if (debug_this && ibt == 0 && i < 5) {
+//                         printf("o=%d, i=%d, bt=%d, inp=%.6f, w=%.6f, res_before=%.6f, res_after=%.6f\n",
+//                                o, i, bt, inp_val, w, old_result, result[ibt]);
+//                     }
+//                 }
+//             }
+//
+//             // write back results to main memory
+//             for (int ibt = 0; ibt < LOOP_UNROLL; ibt++) {
+//                 int bt = obt + ibt;
+//                 out[bt * OC + o] = result[ibt];
+//
+//                 // Debug the first few output values
+//                 if (debug_this && ibt == 0) {
+//                     printf("Final result for bt=%d, o=%d: %.6f\n", bt, o, result[ibt]);
+//                 }
+//             }
+//         }
+//     }
+//
+//     // Debug final output
+//     printf("First 5 elements of output: ");
+//     for (int i = 0; i < 5; i++) {
+//         printf("%.6f ", out[i * OC]);  // First element of each batch
+//     }
+//     printf("\n");
+// }
 
 // Apply element-wise addition
 void add_tensors(float *out, const float *a, const float *b, int size) {

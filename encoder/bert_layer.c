@@ -36,7 +36,7 @@ typedef struct {
   BertSelfOutput output;
 } BertAttention;
 
-void load_from_checkpoint_bso(BertSelfOutput *bso, BertConfig config) {
+void load_from_checkpoint1(BertSelfOutput *bso, BertConfig config) {
 
   // Paths to weight files
   const char *dense_weight_path =
@@ -59,7 +59,7 @@ void load_from_checkpoint_bso(BertSelfOutput *bso, BertConfig config) {
   float *out = NULL;
 
   // Try to load with shape files first
-  // printf("Loading model weights and biases...\n");
+  printf("Loading model weights and biases...\n");
   int total_size;
   dw = load_tensor(dense_weight_path, &total_size);
   db = load_tensor(dense_bias_path, &total_size);
@@ -205,9 +205,9 @@ void bert_attention_forward(BertSelfAttention BertSelfAttention,
                          num_heads, head_dim);
 }
 
-void bert_output_forward(BertSelfOutput bert_self_output, float *output,
-                         float *hidden_states, float *input_tensor, int B,
-                         int T, int C) {
+void bert_selfoutput_forward(BertSelfOutput bert_self_output, float *output,
+                             float *hidden_states, float *input_tensor, int B,
+                             int T, int C) {
 
   // Temporary buffer for intermediate results
   float *temp_buffer = (float *)malloc(B * T * C * sizeof(float));
@@ -216,11 +216,16 @@ void bert_output_forward(BertSelfOutput bert_self_output, float *output,
     return;
   }
 
-  // 1. Linear projection: hidden_states = self.dense(hidden_states)
+  // print_float_array(temp_buffer, 5);
+  print_float_array(hidden_states, 5);
+  // print_float_array(bert_self_output.dense_weight, 5);
+  // print_float_array(bert_self_output.dense_bias, 5);
+  printf("Dimensions: B=%d T=%d C=%d C=%d\n", B, T, C, C);
+
   matmul_forward(temp_buffer, hidden_states, bert_self_output.dense_weight,
                  bert_self_output.dense_bias, B, T, C, C);
 
-  print_float_array(temp_buffer, 10);
+  print_float_array(temp_buffer, 5);
   // 2. Apply dropout (during inference, this is identity)
   apply_dropout(temp_buffer, temp_buffer, bert_self_output.dropout_prob,
                 B * T * C);
@@ -241,7 +246,7 @@ void bert_output_forward(BertSelfOutput bert_self_output, float *output,
                         bert_self_output.layer_norm_eps);
 
   // Print some values for debugging
-  // printf("Output after layer norm:\n");
+  printf("Output after layer norm:\n");
   // print_float_array(output, 10);
 
   // Free temporary buffers
@@ -253,11 +258,24 @@ void attention_forward(BertAttention attention, BertConfig configuration,
                        float *input, float *output) {
 
   bert_attention_forward(attention.self, input, output);
+  // Verify attention output
+  int total_size;
+  const char *h_path = "bins/t1.bin";
+  float *h = NULL;
+  h = load_tensor(h_path, &total_size);
+  check_tensor(h, output, 5, "ao");
   // bert_output_forward(BertSelfOutput bert_self_output, float *output, float
   // *hidden_states, float *input_tensor, int B, int T, int C)
+  // print_float_array(output, 10);
   float *c_out = (float *)malloc(2 * 128 * 768 * sizeof(float));
-  bert_output_forward(attention.output, c_out, output, input, 2, 128, 768);
-  // print_float_array(c_out, 10);
+  // bert_selfoutput_forward(attention.output, c_out, h, input, 2, 128, 768);
+  bert_selfoutput_forward(attention.output, c_out, output, input, 2, 128, 768);
+  print_float_array(c_out, 10);
+
+  const char *so_path = "bins/layer0_self_output_layernorm.bin";
+  float *out = NULL;
+  out = load_tensor(so_path, &total_size);
+  check_tensor(c_out, out, 5, "ao");
 }
 
 int main() {
@@ -276,7 +294,7 @@ int main() {
   load_from_checkpoint(&SelfAttention, config);
 
   BertSelfOutput bert_self_output;
-  load_from_checkpoint_bso(&bert_self_output, config);
+  load_from_checkpoint1(&bert_self_output, config);
 
   BertAttention attention;
   attention.self = SelfAttention;
@@ -292,6 +310,17 @@ int main() {
 
   float *context = (float *)malloc(total_seq_hidden * sizeof(float));
   attention_forward(attention, config, input_tensor, context);
+
+  printf("loadng h and x\n");
+  // print_float_array(context, 5);
+  // print_float_array(input_tensor, 5);
+  // print_float_array(bert_self_output.dense_bias, 5);
+  // print_float_array(bert_self_output.dense_weight, 5);
+
+  // bert_selfoutput_forward(bert_self_output, c_out, context, input_tensor, 2,
+  //                         128, 768);
+  // check_tensor(c_out, out, 10, "bso");
+
   // check_tensor(context, out, 10, "bso");
 
   free(context);

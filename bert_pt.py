@@ -322,7 +322,6 @@ class BertSelfOutput(nn.Module):
 
     def forward(self, hidden_states: torch.Tensor, input_tensor: torch.Tensor) -> torch.Tensor:
         B, T, C = 2, 128, 768
-        breakpoint()
         # Save inputs
         p = 'bins/t1.bin'
         t = 'bins/tw.bin'
@@ -356,6 +355,7 @@ class BertSelfOutput(nn.Module):
         normalized = self.LayerNorm(residual)
         save_tensor_as_bin(
             f"bins/layer{self.layer_idx}_self_output_layernorm.bin", normalized)
+        breakpoint()
 
         return normalized
 
@@ -375,6 +375,7 @@ class BertAttention(nn.Module):
 
         # Self-attention
         self_outputs = self.self(x)
+
 
         # Self-output processing
         attention_output = self.output(self_outputs[0], x)
@@ -534,7 +535,6 @@ if __name__ == "__main__":
     model = BertModelCustom(config)
     model.load_from_pretrained(bert_base)
     model.eval()  # Set to evaluation mode to disable dropout
-    breakpoint()
 
     # Generate outputs from both models for comparison
     with torch.no_grad():
